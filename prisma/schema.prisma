@@ -1,0 +1,145 @@
+// Prisma schema for the Steam Reviews Qualitative Coding Tool.
+// See build plan: /Users/arianniakan/.claude/plans/spicy-scribbling-lollipop.md
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Game {
+  id         String   @id @default(cuid())
+  steamAppId Int      @unique
+  name       String
+  createdAt  DateTime @default(now())
+
+  reviews      Review[]
+  codebooks    Codebook[]
+  events       Event[]
+  savedSamples SavedSample[]
+}
+
+// A named, reusable filter preset for the review browser — e.g. "review-bomb
+// week". Stores the raw query string so applying it is just a redirect.
+model SavedSample {
+  id        String   @id @default(cuid())
+  gameId    String
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  name      String
+  query     String
+  createdAt DateTime @default(now())
+
+  @@index([gameId])
+}
+
+model Review {
+  id                       String   @id @default(cuid())
+  gameId                   String
+  game                     Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  steamReviewId            String   @unique
+  text                     String
+  votedUp                  Boolean
+  playtimeForever          Int
+  votesUp                  Int
+  votesFunny               Int
+  weightedVoteScore        Float
+  timestampCreated         DateTime
+  timestampUpdated         DateTime
+  writtenDuringEarlyAccess Boolean
+  steamPurchase            Boolean
+  receivedForFree          Boolean
+  commentCount             Int
+  language                 String
+  createdAt                DateTime @default(now())
+
+  taggings Tagging[]
+
+  @@index([gameId])
+  @@index([gameId, votedUp])
+  @@index([gameId, timestampCreated])
+}
+
+enum CoderKind {
+  HUMAN
+  AI
+}
+
+// A single row represents either a human researcher or the reserved AI
+// pseudo-coder. Keeping both under one table (rather than a bare string
+// on Tagging) lets Tagging.coderId stay a real foreign key, and makes
+// "group taggings by coder kind" the whole implementation of Cohen's kappa.
+model Coder {
+  id        String    @id @default(cuid())
+  kind      CoderKind @default(HUMAN)
+  name      String
+  email     String?   @unique
+  createdAt DateTime  @default(now())
+
+  taggings Tagging[]
+}
+
+model Codebook {
+  id        String   @id @default(cuid())
+  gameId    String
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  name      String
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+
+  codes Code[]
+
+  @@index([gameId])
+}
+
+model Code {
+  id           String   @id @default(cuid())
+  codebookId   String
+  codebook     Codebook @relation(fields: [codebookId], references: [id], onDelete: Cascade)
+  label        String
+  description  String
+  color        String   @default("#6b7280")
+  parentCodeId String?
+  parentCode   Code?    @relation("CodeHierarchy", fields: [parentCodeId], references: [id])
+  childCodes   Code[]   @relation("CodeHierarchy")
+  createdAt    DateTime @default(now())
+
+  taggings Tagging[]
+
+  @@unique([codebookId, label])
+}
+
+model Tagging {
+  id           String   @id @default(cuid())
+  reviewId     String
+  review       Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  codeId       String
+  code         Code     @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  coderId      String
+  coder        Coder    @relation(fields: [coderId], references: [id], onDelete: Cascade)
+  spanStart    Int?
+  spanEnd      Int?
+  memo         String?
+  aiConfidence Float?
+  aiRationale  String?
+  createdAt    DateTime @default(now())
+
+  @@index([reviewId])
+  @@index([codeId])
+  @@index([coderId])
+}
+
+// Patch releases, controversies, review-bomb dates — overlaid on the
+// theme-frequency-over-time chart in the analytics dashboard.
+model Event {
+  id        String   @id @default(cuid())
+  gameId    String
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  label     String
+  date      DateTime
+  createdAt DateTime @default(now())
+
+  @@index([gameId])
+}
