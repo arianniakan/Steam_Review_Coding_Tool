@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { openai, OPENAI_MODEL } from "@/lib/openai";
-import { checkRateLimit } from "@/lib/rateLimit";
+import { checkRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
 
 interface RawSuggestion {
   codeLabel: string;
@@ -25,10 +25,11 @@ const MAX_CODES = 50;
 // sends both directly; this route's only job is the OpenAI call.
 export async function POST(request: Request) {
   const rateLimit = await checkRateLimit(request, "suggest-codes", 20, "1 h");
+  const headers = rateLimitHeaders(rateLimit);
   if (!rateLimit.allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded — try again later" },
-      { status: 429 },
+      { status: 429, headers },
     );
   }
 
@@ -37,16 +38,22 @@ export async function POST(request: Request) {
   const codes = Array.isArray(body.codes) ? (body.codes as IncomingCode[]) : [];
 
   if (!reviewText) {
-    return NextResponse.json({ error: "reviewText is required" }, { status: 400 });
+    return NextResponse.json({ error: "reviewText is required" }, { status: 400, headers });
   }
   if (reviewText.length > MAX_REVIEW_CHARS) {
-    return NextResponse.json({ error: "reviewText is too long" }, { status: 400 });
+    return NextResponse.json({ error: "reviewText is too long" }, { status: 400, headers });
   }
   if (codes.length === 0) {
-    return NextResponse.json({ error: "This codebook has no codes yet" }, { status: 400 });
+    return NextResponse.json(
+      { error: "This codebook has no codes yet" },
+      { status: 400, headers },
+    );
   }
   if (codes.length > MAX_CODES) {
-    return NextResponse.json({ error: "Too many codes in this codebook" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Too many codes in this codebook" },
+      { status: 400, headers },
+    );
   }
 
   const codebookDescription = codes.map((c) => `- ${c.label}: ${c.description}`).join("\n");
@@ -114,7 +121,7 @@ export async function POST(request: Request) {
     console.error("suggest-codes: OpenAI call failed", err);
     return NextResponse.json(
       { error: "AI suggestion request failed — check OPENAI_API_KEY and try again" },
-      { status: 502 },
+      { status: 502, headers },
     );
   }
 
@@ -142,5 +149,5 @@ export async function POST(request: Request) {
     })
     .filter((s): s is NonNullable<typeof s> => s !== null);
 
-  return NextResponse.json({ suggestions });
+  return NextResponse.json({ suggestions }, { headers });
 }

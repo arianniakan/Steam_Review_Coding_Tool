@@ -50,6 +50,7 @@ function clientIp(request: Request): string {
 
 export interface RateLimitResult {
   allowed: boolean;
+  limit: number;
   remaining: number;
   reset: number;
 }
@@ -64,13 +65,29 @@ export async function checkRateLimit(
   window: `${number} ${"s" | "m" | "h" | "d"}`,
 ): Promise<RateLimitResult> {
   const limiter = getLimiter(name, limit, window);
-  if (!limiter) return { allowed: true, remaining: limit, reset: 0 };
+  if (!limiter) return { allowed: true, limit, remaining: limit, reset: 0 };
 
   try {
     const result = await limiter.limit(clientIp(request));
-    return { allowed: result.success, remaining: result.remaining, reset: result.reset };
+    return {
+      allowed: result.success,
+      limit,
+      remaining: result.remaining,
+      reset: result.reset,
+    };
   } catch (err) {
     console.error(`Rate limit check failed for "${name}" — allowing request`, err);
-    return { allowed: true, remaining: limit, reset: 0 };
+    return { allowed: true, limit, remaining: limit, reset: 0 };
   }
+}
+
+// Standard-ish rate-limit response headers (same convention as GitHub's
+// API) so the client can show remaining quota / when it resets without the
+// route needing to duplicate this on every response it returns.
+export function rateLimitHeaders(result: RateLimitResult): Record<string, string> {
+  return {
+    "X-RateLimit-Limit": String(result.limit),
+    "X-RateLimit-Remaining": String(result.remaining),
+    "X-RateLimit-Reset": String(result.reset),
+  };
 }

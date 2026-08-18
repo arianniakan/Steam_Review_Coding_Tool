@@ -8,6 +8,11 @@ import { PLAYTIME_TIERS } from "@/lib/playtimeTiers";
 import { ReviewPicker } from "./ReviewPicker";
 import { sampleReviewsForCodebook } from "@/lib/localDb/queries/reviews";
 import { createCodebookWithCodes } from "@/lib/localDb/queries/codebooks";
+import {
+  parseRateLimitHeaders,
+  formatResetIn,
+  type RateLimitQuota,
+} from "@/lib/rateLimitClient";
 
 const MIN_SAMPLE_SIZE = 10;
 const MAX_SAMPLE_SIZE = 100;
@@ -75,6 +80,7 @@ export function AutoCodebookGenerator({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quota, setQuota] = useState<RateLimitQuota | null>(null);
 
   const [proposals, setProposals] = useState<Proposal[] | null>(null);
   const [usedSampleSize, setUsedSampleSize] = useState(0);
@@ -131,8 +137,17 @@ export function AutoCodebookGenerator({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reviewTexts, gameName, focus: focus || undefined, targetCount }),
       });
+      const rateLimitQuota = parseRateLimitHeaders(res);
+      if (rateLimitQuota) setQuota(rateLimitQuota);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to generate codebook");
+      if (!res.ok) {
+        if (res.status === 429 && rateLimitQuota) {
+          throw new Error(
+            `Codebook generation limit reached — resets ${formatResetIn(rateLimitQuota.reset)}`,
+          );
+        }
+        throw new Error(data.error ?? "Failed to generate codebook");
+      }
       setProposals(
         data.proposals.map((p: { label: string; description: string }, i: number) => ({
           ...p,
@@ -463,6 +478,12 @@ export function AutoCodebookGenerator({
                 ? `Generate proposals from ${selectedIds.size} selected review(s)`
                 : "Generate proposals"}
           </button>
+          {quota && quota.reset > 0 && (
+            <p className={`text-xs ${quota.remaining <= 1 ? "text-amber-600" : "text-gray-400"}`}>
+              {quota.remaining}/{quota.limit} codebook generations left this hour
+              {quota.remaining === 0 ? ` — resets ${formatResetIn(quota.reset)}` : ""}
+            </p>
+          )}
           {error && <p className="text-red-600">{error}</p>}
         </form>
       )}

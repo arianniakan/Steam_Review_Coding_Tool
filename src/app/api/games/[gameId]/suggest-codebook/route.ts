@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { openai, OPENAI_MODEL } from "@/lib/openai";
-import { checkRateLimit } from "@/lib/rateLimit";
+import { checkRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
 
 interface RawProposal {
   label: string;
@@ -17,10 +17,11 @@ const MAX_REVIEW_TEXTS = 40; // matches the sampler's own cap, defends direct AP
 // texts and asks OpenAI to propose a codebook from them.
 export async function POST(request: Request) {
   const rateLimit = await checkRateLimit(request, "suggest-codebook", 5, "1 h");
+  const headers = rateLimitHeaders(rateLimit);
   if (!rateLimit.allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded — try again later" },
-      { status: 429 },
+      { status: 429, headers },
     );
   }
 
@@ -40,11 +41,14 @@ export async function POST(request: Request) {
   if (reviewTexts.length === 0) {
     return NextResponse.json(
       { error: "No reviews match these criteria — loosen the filters and try again" },
-      { status: 400 },
+      { status: 400, headers },
     );
   }
   if (reviewTexts.length > MAX_REVIEW_TEXTS) {
-    return NextResponse.json({ error: "Too many reviews in the sample" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Too many reviews in the sample" },
+      { status: 400, headers },
+    );
   }
 
   const reviewsBlock = reviewTexts
@@ -112,12 +116,15 @@ export async function POST(request: Request) {
     console.error("suggest-codebook: OpenAI call failed", err);
     return NextResponse.json(
       { error: "AI codebook generation failed — check OPENAI_API_KEY and try again" },
-      { status: 502 },
+      { status: 502, headers },
     );
   }
 
-  return NextResponse.json({
-    proposals: raw.proposals,
-    sampleSize: reviewTexts.length,
-  });
+  return NextResponse.json(
+    {
+      proposals: raw.proposals,
+      sampleSize: reviewTexts.length,
+    },
+    { headers },
+  );
 }

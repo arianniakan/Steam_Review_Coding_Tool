@@ -5,6 +5,11 @@ import { toast } from "sonner";
 import { buildHighlightSegments } from "@/lib/highlightSpans";
 import { createTagging, deleteTagging } from "@/lib/localDb/queries/taggings";
 import { getDefaultResearcher, getAiCoder } from "@/lib/localDb/queries/coders";
+import {
+  parseRateLimitHeaders,
+  formatResetIn,
+  type RateLimitQuota,
+} from "@/lib/rateLimitClient";
 
 interface Code {
   id: string;
@@ -112,6 +117,7 @@ export function TagEditor({
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [resolvingKey, setResolvingKey] = useState<string | null>(null);
   const [suggestError, setSuggestError] = useState<string | null>(null);
+  const [quota, setQuota] = useState<RateLimitQuota | null>(null);
 
   function handleMouseUp() {
     if (!textRef.current) return;
@@ -178,8 +184,15 @@ export function TagEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reviewText, codes }),
       });
+      const rateLimitQuota = parseRateLimitHeaders(res);
+      if (rateLimitQuota) setQuota(rateLimitQuota);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to get AI suggestions");
+      if (!res.ok) {
+        if (res.status === 429 && rateLimitQuota) {
+          throw new Error(`AI suggestion limit reached — resets ${formatResetIn(rateLimitQuota.reset)}`);
+        }
+        throw new Error(data.error ?? "Failed to get AI suggestions");
+      }
       setSuggestions(data.suggestions);
       toast.success(
         data.suggestions.length > 0
@@ -354,6 +367,14 @@ export function TagEditor({
         <p className="mt-1 text-xs text-gray-500">
           Suggestions are never applied automatically — accept or reject each one below.
         </p>
+        {quota && quota.reset > 0 && (
+          <p
+            className={`mt-1 text-xs ${quota.remaining <= 2 ? "text-amber-600" : "text-gray-400"}`}
+          >
+            {quota.remaining}/{quota.limit} AI requests left this hour
+            {quota.remaining === 0 ? ` — resets ${formatResetIn(quota.reset)}` : ""}
+          </p>
+        )}
         {suggestError && <p className="mt-2 text-red-600">{suggestError}</p>}
 
         {suggestions.length > 0 && (
