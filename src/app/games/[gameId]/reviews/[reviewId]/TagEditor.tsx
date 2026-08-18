@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { buildHighlightSegments } from "@/lib/highlightSpans";
 
 interface Code {
@@ -119,9 +120,12 @@ export function TagEditor({
       setCodeId("");
       window.getSelection()?.removeAllRanges();
       setSelection(null);
+      toast.success(`Tagged "${data.code.label}"`);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -135,9 +139,12 @@ export function TagEditor({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to delete tagging");
       setTaggings((prev) => prev.filter((t) => t.id !== taggingId));
+      toast.success("Tagging deleted");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setError(message);
+      toast.error(message);
     } finally {
       setDeletingId(null);
     }
@@ -155,8 +162,15 @@ export function TagEditor({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to get AI suggestions");
       setSuggestions(data.suggestions);
+      toast.success(
+        data.suggestions.length > 0
+          ? `${data.suggestions.length} suggestion${data.suggestions.length === 1 ? "" : "s"} from AI`
+          : "AI found no suggestions for this review",
+      );
     } catch (err) {
-      setSuggestError(err instanceof Error ? err.message : "Something went wrong");
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setSuggestError(message);
+      toast.error(message);
     } finally {
       setLoadingSuggestions(false);
     }
@@ -195,9 +209,12 @@ export function TagEditor({
       if (!res.ok) throw new Error(data.error ?? "Failed to accept suggestion");
       setTaggings((prev) => [data, ...prev]);
       setSuggestions((prev) => prev.filter((x) => suggestionKey(x) !== key));
+      toast.success(`Accepted AI suggestion "${data.code.label}"`);
       router.refresh();
     } catch (err) {
-      setSuggestError(err instanceof Error ? err.message : "Something went wrong");
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setSuggestError(message);
+      toast.error(message);
     } finally {
       setResolvingKey(null);
     }
@@ -205,6 +222,7 @@ export function TagEditor({
 
   function handleRejectSuggestion(s: Suggestion) {
     setSuggestions((prev) => prev.filter((x) => suggestionKey(x) !== suggestionKey(s)));
+    toast(`Rejected "${s.codeLabel}"`);
   }
 
   return (
@@ -212,7 +230,7 @@ export function TagEditor({
       <p
         ref={textRef}
         onMouseUp={handleMouseUp}
-        className="whitespace-pre-wrap rounded border border-gray-200 p-4 text-sm leading-relaxed"
+        className="whitespace-pre-wrap rounded-xl border border-gray-200 bg-white shadow-sm p-4 text-sm leading-relaxed"
       >
         {highlightSegments.map((seg, i) =>
           seg.color ? (
@@ -231,7 +249,7 @@ export function TagEditor({
 
       <form
         onSubmit={handleApply}
-        className="mt-4 flex flex-col gap-3 rounded border border-gray-200 p-4 text-sm"
+        className="mt-4 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white shadow-sm p-4 text-sm"
       >
         <p className="font-medium">
           {selection ? (
@@ -286,7 +304,7 @@ export function TagEditor({
           <button
             type="submit"
             disabled={submitting || !codeId}
-            className="self-start rounded bg-black px-4 py-1.5 text-white disabled:opacity-50"
+            className="self-start rounded-lg bg-black px-4 py-1.5 text-white disabled:opacity-50"
           >
             {submitting ? "Applying…" : "Apply code"}
           </button>
@@ -328,7 +346,7 @@ export function TagEditor({
             {suggestions.map((s) => {
               const key = suggestionKey(s);
               return (
-                <li key={key} className="rounded border border-gray-200 p-3">
+                <li key={key} className="rounded-xl border border-gray-200 bg-white shadow-sm p-3">
                   <div className="flex items-center gap-2">
                     <span
                       aria-hidden
@@ -349,7 +367,7 @@ export function TagEditor({
                       type="button"
                       onClick={() => handleAcceptSuggestion(s)}
                       disabled={resolvingKey === key}
-                      className="rounded bg-black px-3 py-1 text-xs text-white disabled:opacity-50"
+                      className="rounded-lg bg-black px-3 py-1 text-xs text-white disabled:opacity-50"
                     >
                       {resolvingKey === key ? "Accepting…" : "Accept"}
                     </button>
@@ -374,7 +392,7 @@ export function TagEditor({
           {taggings.map((t) => (
             <li
               key={t.id}
-              className="flex items-start justify-between gap-3 rounded border border-gray-200 p-3 text-sm"
+              className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 bg-white shadow-sm p-3 text-sm"
             >
               <div>
                 <div className="flex items-center gap-2">

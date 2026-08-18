@@ -39,7 +39,7 @@ export default async function CodebooksPage({
           <li key={cb.id}>
             <Link
               href={`/games/${gameId}/codebooks/${cb.id}`}
-              className="flex items-center justify-between rounded border border-gray-200 px-4 py-2 text-sm hover:border-gray-400"
+              className="flex items-center justify-between rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-2 text-sm hover:border-gray-400"
             >
               <span>{cb.name}</span>
               <span className="text-gray-500">

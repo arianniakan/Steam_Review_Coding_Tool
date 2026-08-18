@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 
 interface IngestResult {
   gameId: string;
@@ -33,8 +34,11 @@ export default function IngestPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Ingestion failed");
       setResult(data);
+      toast.success(`Ingested ${data.ingestedCount} review(s) for ${data.gameName}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -80,7 +84,7 @@ export default function IngestPage() {
         <button
           type="submit"
           disabled={loading}
-          className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
+          className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50"
         >
           {loading ? "Ingesting…" : "Ingest reviews"}
         </button>
@@ -89,7 +93,7 @@ export default function IngestPage() {
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
 
       {result && (
-        <div className="mt-6 rounded border border-gray-200 p-4 text-sm">
+        <div className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm p-4 text-sm">
           <p className="font-medium">{result.gameName}</p>
           <p className="mt-1 text-gray-600">
             Fetched {result.fetchedFromSteam} reviews from Steam across{" "}

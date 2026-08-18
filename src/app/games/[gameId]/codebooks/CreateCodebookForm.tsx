@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 export function CreateCodebookForm({ gameId }: { gameId: string }) {
   const router = useRouter();
@@ -22,9 +23,12 @@ export function CreateCodebookForm({ gameId }: { gameId: string }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to create codebook");
       setName("");
+      toast.success(`Created codebook "${data.name}"`);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
@@ -43,7 +47,7 @@ export function CreateCodebookForm({ gameId }: { gameId: string }) {
         <button
           type="submit"
           disabled={submitting}
-          className="rounded bg-black px-4 py-1.5 text-sm text-white disabled:opacity-50"
+          className="rounded-lg bg-black px-4 py-1.5 text-sm text-white disabled:opacity-50"
         >
           {submitting ? "Creating…" : "Create"}
         </button>

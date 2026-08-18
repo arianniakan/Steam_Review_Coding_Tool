@@ -3,6 +3,9 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { cohensKappa, interpretKappa } from "@/lib/kappa";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { KappaGauge } from "./KappaGauge";
+import { CodeFrequencyChart } from "./CodeFrequencyChart";
+import { ThemeTimelineChart } from "./ThemeTimelineChart";
 
 function monthKey(d: Date) {
   return d.toISOString().slice(0, 7); // YYYY-MM
@@ -73,7 +76,6 @@ export default async function AnalyticsPage({
       };
     })
     .sort((a, b) => b.total - a.total);
-  const maxFrequency = Math.max(...frequency.map((f) => f.total), 1);
 
   // --- Code co-occurrence (top pairs within the same review, any coder) ---
   const codesByReview = new Map<string, Set<string>>();
@@ -134,7 +136,7 @@ export default async function AnalyticsPage({
       </div>
 
       {/* Reliability */}
-      <section className="mt-6 rounded border border-gray-200 p-4">
+      <section className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm p-4">
         <h2 className="font-medium">AI–human reliability (Cohen&apos;s κ)</h2>
         {reliability.totalPairs === 0 ? (
           <p className="mt-2 text-sm text-gray-500">
@@ -143,11 +145,12 @@ export default async function AnalyticsPage({
           </p>
         ) : (
           <>
-            <p className="mt-2 text-3xl font-semibold">
-              {reliability.kappa === null ? "—" : reliability.kappa.toFixed(3)}
-            </p>
-            {reliability.kappa !== null && (
-              <p className="text-sm text-gray-500">{interpretKappa(reliability.kappa)} agreement</p>
+            {reliability.kappa === null ? (
+              <p className="mt-2 text-3xl font-semibold">—</p>
+            ) : (
+              <div className="mt-2 flex justify-center">
+                <KappaGauge kappa={reliability.kappa} interpretation={interpretKappa(reliability.kappa)} />
+              </div>
             )}
             <table className="mt-4 w-full text-sm">
               <tbody>
@@ -182,43 +185,21 @@ export default async function AnalyticsPage({
       </section>
 
       {/* Code frequency */}
-      <section className="mt-6 rounded border border-gray-200 p-4">
+      <section className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm p-4">
         <h2 className="font-medium">Code frequency</h2>
-        <ul className="mt-3 flex flex-col gap-2">
-          {frequency.map((f) => (
-            <li key={f.code.id} className="text-sm">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-2">
-                  <span
-                    aria-hidden
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ backgroundColor: f.code.color }}
-                  />
-                  {f.code.label}
-                </span>
-                <span className="text-gray-500">
-                  {f.total} ({f.human} human, {f.ai} AI)
-                </span>
-              </div>
-              <div className="mt-1 h-1.5 rounded bg-gray-100">
-                <div
-                  className="h-1.5 rounded"
-                  style={{
-                    width: `${(f.total / maxFrequency) * 100}%`,
-                    backgroundColor: f.code.color,
-                  }}
-                />
-              </div>
-            </li>
-          ))}
-          {frequency.length === 0 && (
-            <li className="text-sm text-gray-500">No taggings yet.</li>
-          )}
-        </ul>
+        {frequency.length === 0 ? (
+          <p className="mt-3 text-sm text-gray-500">No taggings yet.</p>
+        ) : (
+          <div className="mt-3">
+            <CodeFrequencyChart
+              data={frequency.map((f) => ({ label: f.code.label, human: f.human, ai: f.ai }))}
+            />
+          </div>
+        )}
       </section>
 
       {/* Co-occurrence */}
-      <section className="mt-6 rounded border border-gray-200 p-4">
+      <section className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm p-4">
         <h2 className="font-medium">Code co-occurrence (top pairs, same review)</h2>
         <ul className="mt-3 flex flex-col gap-1 text-sm">
           {coocList.map(({ a, b, count }) => (
@@ -238,39 +219,19 @@ export default async function AnalyticsPage({
       </section>
 
       {/* Theme frequency over time */}
-      <section className="mt-6 rounded border border-gray-200 p-4">
+      <section className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm p-4">
         <h2 className="font-medium">Theme frequency over time</h2>
         {months.length === 0 ? (
           <p className="mt-2 text-sm text-gray-500">Not enough dated taggings yet.</p>
         ) : (
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-max text-xs">
-              <thead>
-                <tr>
-                  <th className="pr-3 text-left font-medium">Code</th>
-                  {months.map((m) => (
-                    <th key={m} className="px-2 text-right font-medium">
-                      {m}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {codes.map((code) => {
-                  const series = seriesByCode.get(code.id);
-                  return (
-                    <tr key={code.id} className="border-t border-gray-100">
-                      <td className="py-1 pr-3">{code.label}</td>
-                      {months.map((m) => (
-                        <td key={m} className="px-2 py-1 text-right text-gray-600">
-                          {series?.get(m) ?? 0}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="mt-3">
+            <ThemeTimelineChart
+              months={months}
+              series={codes.map((code) => ({
+                code: { id: code.id, label: code.label, color: code.color },
+                data: months.map((m) => seriesByCode.get(code.id)?.get(m) ?? 0),
+              }))}
+            />
           </div>
         )}
 

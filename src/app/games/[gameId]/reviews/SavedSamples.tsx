@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 interface SavedSample {
   id: string;
@@ -39,19 +40,23 @@ export function SavedSamples({
       if (!res.ok) throw new Error(data.error ?? "Failed to save sample");
       setSamples((prev) => [data, ...prev]);
       setName("");
+      toast.success(`Saved filter preset "${data.name}"`);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDelete(id: string, name: string) {
     setDeletingId(id);
     try {
       await fetch(`/api/saved-samples/${id}`, { method: "DELETE" });
       setSamples((prev) => prev.filter((s) => s.id !== id));
+      toast.success(`Deleted "${name}"`);
       router.refresh();
     } finally {
       setDeletingId(null);
@@ -59,7 +64,7 @@ export function SavedSamples({
   }
 
   return (
-    <div className="mt-3 rounded border border-gray-200 p-3 text-sm">
+    <div className="mt-3 rounded-xl border border-gray-200 bg-white shadow-sm p-3 text-sm">
       <p className="font-medium">Saved samples</p>
       <ul className="mt-2 flex flex-wrap gap-2">
         {samples.map((s) => (
@@ -68,7 +73,7 @@ export function SavedSamples({
               {s.name}
             </a>
             <button
-              onClick={() => handleDelete(s.id)}
+              onClick={() => handleDelete(s.id, s.name)}
               disabled={deletingId === s.id}
               className="ml-1 text-red-600 disabled:opacity-50"
               aria-label={`Delete saved sample ${s.name}`}
@@ -91,7 +96,7 @@ export function SavedSamples({
         <button
           type="submit"
           disabled={submitting}
-          className="rounded bg-black px-3 py-1 text-xs text-white disabled:opacity-50"
+          className="rounded-lg bg-black px-3 py-1 text-xs text-white disabled:opacity-50"
         >
           {submitting ? "Saving…" : "Save current filters"}
         </button>

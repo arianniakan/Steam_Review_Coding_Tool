@@ -74,7 +74,7 @@ export default async function ReviewsPage({
         {codedCount} of {total} coded
       </p>
 
-      <form method="get" className="mt-6 grid grid-cols-2 gap-4 rounded border border-gray-200 p-4 text-sm sm:grid-cols-4">
+      <form method="get" className="mt-6 grid grid-cols-2 gap-4 rounded-xl border border-gray-200 bg-white shadow-sm p-4 text-sm sm:grid-cols-4">
         <label className="flex flex-col gap-1">
           <span className="font-medium">Recommended</span>
           <select name="voted" defaultValue={sp.voted ?? ""} className="rounded border border-gray-300 px-2 py-1">
@@ -116,7 +116,7 @@ export default async function ReviewsPage({
         </div>
 
         <div className="col-span-2 flex items-end gap-2 sm:col-span-4">
-          <button type="submit" className="rounded bg-black px-4 py-1.5 text-white">
+          <button type="submit" className="rounded-lg bg-black px-4 py-1.5 text-white">
             Apply filters
           </button>
           <a href={`/games/${gameId}/reviews`} className="rounded border border-gray-300 px-4 py-1.5">
@@ -133,7 +133,7 @@ export default async function ReviewsPage({
 
       <ul className="mt-6 flex flex-col gap-4">
         {reviews.map((r) => (
-          <li key={r.id} className="rounded border border-gray-200 p-4 text-sm">
+          <li key={r.id} className="rounded-xl border border-gray-200 bg-white shadow-sm p-4 text-sm">
             <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
               <span className={r.votedUp ? "text-green-700" : "text-red-700"}>
                 {r.votedUp ? "Recommended" : "Not recommended"}

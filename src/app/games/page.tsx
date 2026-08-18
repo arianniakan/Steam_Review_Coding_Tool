@@ -21,7 +21,7 @@ export default async function GamesPage() {
           <li key={g.id}>
             <Link
               href={`/games/${g.id}/reviews`}
-              className="flex items-center justify-between rounded border border-gray-200 px-4 py-3 text-sm hover:border-gray-400"
+              className="flex items-center justify-between rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-3 text-sm hover:border-gray-400"
             >
               <span className="font-medium">{g.name}</span>
               <span className="text-gray-500">

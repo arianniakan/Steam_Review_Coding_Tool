@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 interface CodeRow {
   id: string;
@@ -168,24 +169,30 @@ export function CodeManager({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to create code");
       setForm(EMPTY_FORM);
+      toast.success(`Added code "${data.label}"`);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setError(message);
+      toast.error(message);
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleDelete(codeId: string) {
+  async function handleDelete(codeId: string, label: string) {
     setDeletingId(codeId);
     setError(null);
     try {
       const res = await fetch(`/api/codes/${codeId}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to delete code");
+      toast.success(`Deleted code "${label}"`);
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setError(message);
+      toast.error(message);
     } finally {
       setDeletingId(null);
     }
@@ -224,9 +231,12 @@ export function CodeManager({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to update code");
       setEditingId(null);
+      toast.success(`Saved changes to "${data.label}"`);
       router.refresh();
     } catch (err) {
-      setEditError(err instanceof Error ? err.message : "Something went wrong");
+      const message = err instanceof Error ? err.message : "Something went wrong";
+      setEditError(message);
+      toast.error(message);
     } finally {
       setSavingEdit(false);
     }
@@ -255,7 +265,7 @@ export function CodeManager({
                     type="button"
                     onClick={() => handleSaveEdit(code.id)}
                     disabled={savingEdit}
-                    className="self-start rounded bg-black px-4 py-1.5 text-white disabled:opacity-50"
+                    className="self-start rounded-lg bg-black px-4 py-1.5 text-white disabled:opacity-50"
                   >
                     {savingEdit ? "Saving…" : "Save"}
                   </button>
@@ -269,7 +279,7 @@ export function CodeManager({
           ) : (
             <li
               key={code.id}
-              className="flex items-start justify-between gap-3 rounded border border-gray-200 p-3 text-sm"
+              className="flex items-start justify-between gap-3 rounded-xl border border-gray-200 bg-white shadow-sm p-3 text-sm"
             >
               <div className="flex gap-2">
                 <span
@@ -294,7 +304,7 @@ export function CodeManager({
                   Edit
                 </button>
                 <button
-                  onClick={() => handleDelete(code.id)}
+                  onClick={() => handleDelete(code.id, code.label)}
                   disabled={deletingId === code.id}
                   className="text-xs text-red-600 underline disabled:opacity-50"
                 >
@@ -309,13 +319,13 @@ export function CodeManager({
         )}
       </ul>
 
-      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3 rounded border border-gray-200 p-4 text-sm">
+      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white shadow-sm p-4 text-sm">
         <p className="font-medium">Add a code</p>
         <CodeFormFields values={form} onChange={setForm} codes={codes} />
         <button
           type="submit"
           disabled={submitting}
-          className="self-start rounded bg-black px-4 py-1.5 text-white disabled:opacity-50"
+          className="self-start rounded-lg bg-black px-4 py-1.5 text-white disabled:opacity-50"
         >
           {submitting ? "Adding…" : "Add code"}
         </button>
