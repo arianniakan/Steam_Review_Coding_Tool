@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { openai, OPENAI_MODEL } from "@/lib/openai";
-import { checkRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
+import { checkRateLimit, rateLimitHeaders, RATE_LIMIT_BUCKETS } from "@/lib/rateLimit";
 
 interface RawSuggestion {
   codeLabel: string;
@@ -24,7 +24,8 @@ const MAX_CODES = 50;
 // caller (which already has the review text and codebook loaded locally)
 // sends both directly; this route's only job is the OpenAI call.
 export async function POST(request: Request) {
-  const rateLimit = await checkRateLimit(request, "suggest-codes", 20, "1 h");
+  const bucket = RATE_LIMIT_BUCKETS.suggestCodes;
+  const rateLimit = await checkRateLimit(request, bucket.name, bucket.limit, bucket.window);
   const headers = rateLimitHeaders(rateLimit);
   if (!rateLimit.allowed) {
     return NextResponse.json(

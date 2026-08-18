@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { COLOR_PRESETS } from "./[codebookId]/CodeManager";
@@ -10,6 +10,7 @@ import { sampleReviewsForCodebook } from "@/lib/localDb/queries/reviews";
 import { createCodebookWithCodes } from "@/lib/localDb/queries/codebooks";
 import {
   parseRateLimitHeaders,
+  fetchRateLimitStatus,
   formatResetIn,
   type RateLimitQuota,
 } from "@/lib/rateLimitClient";
@@ -81,6 +82,13 @@ export function AutoCodebookGenerator({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quota, setQuota] = useState<RateLimitQuota | null>(null);
+
+  useEffect(() => {
+    if (!open || quota) return;
+    fetchRateLimitStatus().then((status) => {
+      if (status) setQuota(status.suggestCodebook);
+    });
+  }, [open, quota]);
 
   const [proposals, setProposals] = useState<Proposal[] | null>(null);
   const [usedSampleSize, setUsedSampleSize] = useState(0);

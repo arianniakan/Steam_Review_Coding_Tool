@@ -48,6 +48,15 @@ function clientIp(request: Request): string {
   return request.headers.get("x-real-ip") ?? "unknown";
 }
 
+// Single source of truth for each bucket's budget — used by the AI routes
+// themselves (to actually enforce it) and by /api/rate-limit-status (to let
+// the client show quota *before* spending a request, not just after). Keeping
+// these in one place means the two can't silently drift out of sync.
+export const RATE_LIMIT_BUCKETS = {
+  suggestCodes: { name: "suggest-codes", limit: 20, window: "1 h" as const },
+  suggestCodebook: { name: "suggest-codebook", limit: 5, window: "1 h" as const },
+} satisfies Record<string, { name: string; limit: number; window: `${number} ${"s" | "m" | "h" | "d"}` }>;
+
 export interface RateLimitResult {
   allowed: boolean;
   limit: number;
@@ -77,6 +86,31 @@ export async function checkRateLimit(
     };
   } catch (err) {
     console.error(`Rate limit check failed for "${name}" — allowing request`, err);
+    return { allowed: true, limit, remaining: limit, reset: 0 };
+  }
+}
+
+// Non-consuming check — same underlying counter as checkRateLimit, but never
+// spends a request. Used only by /api/rate-limit-status.
+export async function peekRateLimit(
+  request: Request,
+  name: string,
+  limit: number,
+  window: `${number} ${"s" | "m" | "h" | "d"}`,
+): Promise<RateLimitResult> {
+  const limiter = getLimiter(name, limit, window);
+  if (!limiter) return { allowed: true, limit, remaining: limit, reset: 0 };
+
+  try {
+    const result = await limiter.getRemaining(clientIp(request));
+    return {
+      allowed: result.remaining > 0,
+      limit: result.limit,
+      remaining: result.remaining,
+      reset: result.reset,
+    };
+  } catch (err) {
+    console.error(`Rate limit peek failed for "${name}" — reporting full quota`, err);
     return { allowed: true, limit, remaining: limit, reset: 0 };
   }
 }

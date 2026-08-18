@@ -24,3 +24,19 @@ export function formatResetIn(reset: number): string {
   const minutes = Math.ceil(ms / 60_000);
   return minutes <= 1 ? "in 1 min" : `in ${minutes} min`;
 }
+
+// Fetches current quota without spending a request — lets the UI show
+// "N/limit left" on page load instead of only after the user's first AI
+// call. Returns null on any failure so callers can just skip rendering.
+export async function fetchRateLimitStatus(): Promise<{
+  suggestCodes: RateLimitQuota;
+  suggestCodebook: RateLimitQuota;
+} | null> {
+  try {
+    const res = await fetch("/api/rate-limit-status", { cache: "no-store" });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}

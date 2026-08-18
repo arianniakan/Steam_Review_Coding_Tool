@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { buildHighlightSegments } from "@/lib/highlightSpans";
 import { createTagging, deleteTagging } from "@/lib/localDb/queries/taggings";
 import { getDefaultResearcher, getAiCoder } from "@/lib/localDb/queries/coders";
 import {
   parseRateLimitHeaders,
+  fetchRateLimitStatus,
   formatResetIn,
   type RateLimitQuota,
 } from "@/lib/rateLimitClient";
@@ -118,6 +119,12 @@ export function TagEditor({
   const [resolvingKey, setResolvingKey] = useState<string | null>(null);
   const [suggestError, setSuggestError] = useState<string | null>(null);
   const [quota, setQuota] = useState<RateLimitQuota | null>(null);
+
+  useEffect(() => {
+    fetchRateLimitStatus().then((status) => {
+      if (status) setQuota(status.suggestCodes);
+    });
+  }, []);
 
   function handleMouseUp() {
     if (!textRef.current) return;

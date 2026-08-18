@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { openai, OPENAI_MODEL } from "@/lib/openai";
-import { checkRateLimit, rateLimitHeaders } from "@/lib/rateLimit";
+import { checkRateLimit, rateLimitHeaders, RATE_LIMIT_BUCKETS } from "@/lib/rateLimit";
 
 interface RawProposal {
   label: string;
@@ -16,7 +16,8 @@ const MAX_REVIEW_TEXTS = 40; // matches the sampler's own cap, defends direct AP
 // src/lib/localDb/queries/reviews.ts). This route just takes the resulting
 // texts and asks OpenAI to propose a codebook from them.
 export async function POST(request: Request) {
-  const rateLimit = await checkRateLimit(request, "suggest-codebook", 5, "1 h");
+  const bucket = RATE_LIMIT_BUCKETS.suggestCodebook;
+  const rateLimit = await checkRateLimit(request, bucket.name, bucket.limit, bucket.window);
   const headers = rateLimitHeaders(rateLimit);
   if (!rateLimit.allowed) {
     return NextResponse.json(
