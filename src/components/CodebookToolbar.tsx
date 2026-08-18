@@ -58,7 +58,8 @@ export function CodebookToolbar({
   }
 
   return (
-    <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-3">
+    <div className="mt-2 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-3">
+      {/* Selecting and configuring the codebook itself */}
       <div className="flex items-center gap-2 text-sm">
         <span className="text-gray-500">Codebook:</span>
         <select
@@ -73,14 +74,17 @@ export function CodebookToolbar({
           ))}
           <option value={NEW_CODEBOOK_VALUE}>+ New codebook…</option>
         </select>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
         <Link
           href={`/games/${gameId}/codebooks/${active.id}`}
-          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:border-gray-400"
+          className="text-xs text-gray-500 underline hover:text-gray-900"
         >
           Manage codes
         </Link>
+      </div>
+
+      {/* Results for the selected codebook — a distinct group, not more
+          options in the same row as the selector above */}
+      <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
         <Link
           href={`/games/${gameId}/codebooks/${active.id}/analytics`}
           className="rounded-lg border border-gray-900 px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
