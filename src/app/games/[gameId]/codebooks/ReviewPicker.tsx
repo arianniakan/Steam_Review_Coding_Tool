@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { countReviews, listReviews } from "@/lib/localDb/queries/reviews";
+import type { ReviewSearchParams } from "@/lib/localDb/queries/reviewFilters";
 
 interface ReviewRow {
   id: string;
@@ -45,15 +47,15 @@ export function ReviewPicker({
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams(
-        Object.entries(filters).filter(([, v]) => v !== "") as [string, string][],
+      const sp: ReviewSearchParams = Object.fromEntries(
+        Object.entries(filters).filter(([, v]) => v !== ""),
       );
-      params.set("page", String(nextPage));
-      const res = await fetch(`/api/games/${gameId}/reviews?${params.toString()}`);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Search failed");
-      setResults(data.reviews);
-      setTotal(data.total);
+      const [reviews, count] = await Promise.all([
+        listReviews(gameId, sp, nextPage),
+        countReviews(gameId, sp),
+      ]);
+      setResults(reviews);
+      setTotal(count);
       setPage(nextPage);
       setSearched(true);
     } catch (err) {
@@ -63,7 +65,7 @@ export function ReviewPicker({
     }
   }
 
-  const totalPages = Math.max(Math.ceil(total / 20), 1);
+  const totalPages = Math.max(Math.ceil(total / 25), 1);
 
   return (
     <div className="rounded border border-gray-200 p-3">

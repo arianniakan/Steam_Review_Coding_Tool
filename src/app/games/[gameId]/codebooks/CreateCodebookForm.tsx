@@ -1,11 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { createCodebook, type Codebook } from "@/lib/localDb/queries/codebooks";
 
-export function CreateCodebookForm({ gameId }: { gameId: string }) {
-  const router = useRouter();
+export function CreateCodebookForm({
+  gameId,
+  onCreated,
+}: {
+  gameId: string;
+  onCreated: (codebook: Codebook & { codeCount: number }) => void;
+}) {
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -15,16 +20,10 @@ export function CreateCodebookForm({ gameId }: { gameId: string }) {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(`/api/games/${gameId}/codebooks`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to create codebook");
+      const created = await createCodebook(gameId, name);
+      onCreated({ ...created, codeCount: 0 });
       setName("");
-      toast.success(`Created codebook "${data.name}"`);
-      router.refresh();
+      toast.success(`Created codebook "${created.name}"`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong";
       setError(message);

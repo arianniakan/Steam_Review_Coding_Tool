@@ -1,35 +1,61 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { CreateCodebookForm } from "./CreateCodebookForm";
 import { AutoCodebookGenerator } from "./AutoCodebookGenerator";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
+import { getGameById, type Game } from "@/lib/localDb/queries/games";
+import { listCodebooksForGame, type CodebookWithCodeCount } from "@/lib/localDb/queries/codebooks";
+import { groupReviewsByLanguage } from "@/lib/localDb/queries/reviews";
+import { listSavedSamplesForGame, type SavedSample } from "@/lib/localDb/queries/savedSamples";
 
-export default async function CodebooksPage({
-  params,
-}: {
-  params: Promise<{ gameId: string }>;
-}) {
-  const { gameId } = await params;
+export default function CodebooksPage() {
+  const { gameId } = useParams<{ gameId: string }>();
+  const [loading, setLoading] = useState(true);
+  const [game, setGame] = useState<Game | null>(null);
+  const [codebooks, setCodebooks] = useState<CodebookWithCodeCount[]>([]);
+  const [languages, setLanguages] = useState<{ language: string; count: number }[]>([]);
+  const [savedSamples, setSavedSamples] = useState<SavedSample[]>([]);
 
-  const game = await prisma.game.findUnique({ where: { id: gameId } });
-  if (!game) notFound();
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [g, cbs, langs, samples] = await Promise.all([
+        getGameById(gameId),
+        listCodebooksForGame(gameId),
+        groupReviewsByLanguage(gameId),
+        listSavedSamplesForGame(gameId),
+      ]);
+      if (cancelled) return;
+      setGame(g);
+      setCodebooks(cbs);
+      setLanguages(langs);
+      setSavedSamples(samples);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId]);
 
-  const [codebooks, languages, savedSamples] = await Promise.all([
-    prisma.codebook.findMany({
-      where: { gameId },
-      orderBy: { createdAt: "desc" },
-      include: { _count: { select: { codes: true } } },
-    }),
-    prisma.review.groupBy({
-      by: ["language"],
-      where: { gameId },
-      _count: true,
-      orderBy: { _count: { language: "desc" } },
-    }),
-    prisma.savedSample.findMany({ where: { gameId }, orderBy: { createdAt: "desc" } }),
-  ]);
+  if (loading) {
+    return (
+      <main className="mx-auto max-w-xl p-8">
+        <p className="text-sm text-gray-500">Loading…</p>
+      </main>
+    );
+  }
+
+  if (!game) {
+    return (
+      <main className="mx-auto max-w-xl p-8">
+        <p className="text-sm text-gray-500">Game not found.</p>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-xl p-8">
@@ -57,7 +83,7 @@ export default async function CodebooksPage({
             >
               <span>{cb.name}</span>
               <span className="text-gray-500">
-                {cb._count.codes} code{cb._count.codes === 1 ? "" : "s"}
+                {cb.codeCount} code{cb.codeCount === 1 ? "" : "s"}
               </span>
             </Link>
           </li>
@@ -67,8 +93,16 @@ export default async function CodebooksPage({
         )}
       </ul>
 
-      <CreateCodebookForm gameId={gameId} />
-      <AutoCodebookGenerator gameId={gameId} languages={languages} savedSamples={savedSamples} />
+      <CreateCodebookForm
+        gameId={gameId}
+        onCreated={(cb) => setCodebooks((prev) => [cb, ...prev])}
+      />
+      <AutoCodebookGenerator
+        gameId={gameId}
+        gameName={game.name}
+        languages={languages}
+        savedSamples={savedSamples}
+      />
     </main>
   );
 }

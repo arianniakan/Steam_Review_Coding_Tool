@@ -6,6 +6,12 @@ import { toast } from "sonner";
 import { COLOR_PRESETS } from "./[codebookId]/CodeManager";
 import { PLAYTIME_TIERS } from "@/lib/playtimeTiers";
 import { ReviewPicker } from "./ReviewPicker";
+import { sampleReviewsForCodebook } from "@/lib/localDb/queries/reviews";
+import { createCodebookWithCodes } from "@/lib/localDb/queries/codebooks";
+
+const MIN_SAMPLE_SIZE = 10;
+const MAX_SAMPLE_SIZE = 100;
+const MIN_REVIEW_TEXT_LENGTH = 20; // skip one-word noise like "gud" / "s"
 
 interface Proposal {
   label: string;
@@ -48,11 +54,13 @@ interface SavedSample {
 
 export function AutoCodebookGenerator({
   gameId,
+  gameName,
   languages,
   savedSamples,
 }: {
   gameId: string;
-  languages: { language: string; _count: number }[];
+  gameName: string;
+  languages: { language: string; count: number }[];
   savedSamples: SavedSample[];
 }) {
   const router = useRouter();
@@ -103,22 +111,25 @@ export function AutoCodebookGenerator({
     setError(null);
     setProposals(null);
     try {
-      const body: Record<string, unknown> =
-        mode === "handpick"
-          ? { targetCount, focus: focus || undefined, reviewIds: [...selectedIds] }
-          : {
-              sampleSize,
-              targetCount,
-              focus: focus || undefined,
-              ratio,
-              sampleMode,
-              filters: Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "")),
-            };
+      const clampedSampleSize = Math.min(Math.max(sampleSize, MIN_SAMPLE_SIZE), MAX_SAMPLE_SIZE);
+      const reviewTexts = await sampleReviewsForCodebook({
+        gameId,
+        filters:
+          mode === "handpick"
+            ? {}
+            : Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "")),
+        reviewIds: mode === "handpick" ? [...selectedIds] : [],
+        sampleSize: clampedSampleSize,
+        ratio,
+        sampleMode,
+        maxSampleSize: MAX_SAMPLE_SIZE,
+        minReviewTextLength: MIN_REVIEW_TEXT_LENGTH,
+      });
 
       const res = await fetch(`/api/games/${gameId}/suggest-codebook`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ reviewTexts, gameName, focus: focus || undefined, targetCount }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to generate codebook");
@@ -154,20 +165,15 @@ export function AutoCodebookGenerator({
     setCreating(true);
     setError(null);
     try {
-      const res = await fetch(`/api/games/${gameId}/codebooks/from-ai`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: codebookName,
-          codes: selected.map(({ label, description, color }) => ({ label, description, color })),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to create codebook");
-      toast.success(`Created "${data.name}" with ${selected.length} code(s)`);
+      const created = await createCodebookWithCodes(
+        gameId,
+        codebookName,
+        selected.map(({ label, description, color }) => ({ label, description, color })),
+      );
+      toast.success(`Created "${created.name}" with ${selected.length} code(s)`);
       setOpen(false);
       setProposals(null);
-      router.push(`/games/${gameId}/codebooks/${data.id}`);
+      router.push(`/games/${gameId}/codebooks/${created.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong";
       setError(message);
@@ -332,7 +338,7 @@ export function AutoCodebookGenerator({
                   <option value="">All</option>
                   {languages.map((l) => (
                     <option key={l.language} value={l.language}>
-                      {l.language} ({l._count})
+                      {l.language} ({l.count})
                     </option>
                   ))}
                 </select>
