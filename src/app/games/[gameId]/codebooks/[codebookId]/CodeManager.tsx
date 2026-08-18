@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { createCode, updateCode, deleteCode } from "@/lib/localDb/queries/codes";
 
 interface CodeRow {
   id: string;
@@ -135,12 +135,12 @@ const EMPTY_FORM: CodeFormValues = {
 
 export function CodeManager({
   codebookId,
-  codes,
+  codes: initialCodes,
 }: {
   codebookId: string;
   codes: CodeRow[];
 }) {
-  const router = useRouter();
+  const [codes, setCodes] = useState<CodeRow[]>(initialCodes);
   const [form, setForm] = useState<CodeFormValues>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -156,21 +156,16 @@ export function CodeManager({
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(`/api/codebooks/${codebookId}/codes`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          label: form.label,
-          description: form.description,
-          color: form.color,
-          parentCodeId: form.parentCodeId || null,
-        }),
+      const created = await createCode({
+        codebookId,
+        label: form.label,
+        description: form.description,
+        color: form.color,
+        parentCodeId: form.parentCodeId || null,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to create code");
+      setCodes((prev) => [...prev, created]);
       setForm(EMPTY_FORM);
-      toast.success(`Added code "${data.label}"`);
-      router.refresh();
+      toast.success(`Added code "${created.label}"`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong";
       setError(message);
@@ -184,11 +179,13 @@ export function CodeManager({
     setDeletingId(codeId);
     setError(null);
     try {
-      const res = await fetch(`/api/codes/${codeId}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to delete code");
+      await deleteCode(codeId);
+      setCodes((prev) =>
+        prev
+          .filter((c) => c.id !== codeId)
+          .map((c) => (c.parentCodeId === codeId ? { ...c, parentCodeId: null } : c)),
+      );
       toast.success(`Deleted code "${label}"`);
-      router.refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong";
       setError(message);
@@ -218,21 +215,15 @@ export function CodeManager({
     setSavingEdit(true);
     setEditError(null);
     try {
-      const res = await fetch(`/api/codes/${codeId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          label: editForm.label,
-          description: editForm.description,
-          color: editForm.color,
-          parentCodeId: editForm.parentCodeId || null,
-        }),
+      const updated = await updateCode(codeId, {
+        label: editForm.label,
+        description: editForm.description,
+        color: editForm.color,
+        parentCodeId: editForm.parentCodeId || null,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to update code");
+      setCodes((prev) => prev.map((c) => (c.id === codeId ? updated : c)));
       setEditingId(null);
-      toast.success(`Saved changes to "${data.label}"`);
-      router.refresh();
+      toast.success(`Saved changes to "${updated.label}"`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong";
       setEditError(message);

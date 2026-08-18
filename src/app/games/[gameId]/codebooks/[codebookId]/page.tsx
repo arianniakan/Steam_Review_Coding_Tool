@@ -1,30 +1,67 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { CodeManager } from "./CodeManager";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
+import { getGameById, type Game } from "@/lib/localDb/queries/games";
+import { getCodebookById, type Codebook } from "@/lib/localDb/queries/codebooks";
+import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
+import { exportCodebookCsv } from "@/lib/localDb/csvExport";
 
-export default async function CodebookDetailPage({
-  params,
-}: {
-  params: Promise<{ gameId: string; codebookId: string }>;
-}) {
-  const { gameId, codebookId } = await params;
+export default function CodebookDetailPage() {
+  const { gameId, codebookId } = useParams<{ gameId: string; codebookId: string }>();
+  const [loading, setLoading] = useState(true);
+  const [game, setGame] = useState<Game | null>(null);
+  const [codebook, setCodebook] = useState<Codebook | null>(null);
+  const [codes, setCodes] = useState<Code[]>([]);
 
-  const codebook = await prisma.codebook.findUnique({
-    where: { id: codebookId },
-    include: { game: true, codes: { orderBy: { createdAt: "asc" } } },
-  });
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const cb = await getCodebookById(codebookId);
+      if (cancelled) return;
+      if (!cb || cb.gameId !== gameId) {
+        setCodebook(null);
+        setLoading(false);
+        return;
+      }
+      const [g, cds] = await Promise.all([getGameById(gameId), listCodesForCodebook(codebookId)]);
+      if (cancelled) return;
+      setGame(g);
+      setCodebook(cb);
+      setCodes(cds);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId, codebookId]);
 
-  if (!codebook || codebook.gameId !== gameId) notFound();
+  if (loading) {
+    return (
+      <main className="mx-auto max-w-xl p-8">
+        <p className="text-sm text-gray-500">Loading…</p>
+      </main>
+    );
+  }
+
+  if (!codebook || !game) {
+    return (
+      <main className="mx-auto max-w-xl p-8">
+        <p className="text-sm text-gray-500">Codebook not found.</p>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-xl p-8">
       <Breadcrumbs
         items={[
           { label: "Games", href: "/games" },
-          { label: codebook.game.name, href: `/games/${gameId}/reviews` },
+          { label: game.name, href: `/games/${gameId}/reviews` },
           { label: "Codebooks", href: `/games/${gameId}/codebooks` },
           { label: codebook.name },
         ]}
@@ -34,21 +71,25 @@ export default async function CodebookDetailPage({
       </div>
       <div className="mt-2 flex items-center justify-between">
         <div>
-          <p className="text-sm text-gray-500">{codebook.game.name}</p>
+          <p className="text-sm text-gray-500">{game.name}</p>
           <h1 className="text-2xl font-semibold">{codebook.name}</h1>
         </div>
         <div className="flex gap-4">
           <Link href={`/games/${gameId}/codebooks/${codebookId}/analytics`} className="text-sm underline">
             Analytics →
           </Link>
-          <a href={`/api/codebooks/${codebookId}/export.csv`} className="text-sm underline">
+          <button
+            type="button"
+            onClick={() => exportCodebookCsv(codebookId, game.name, codebook.name)}
+            className="text-sm underline"
+          >
             Export CSV →
-          </a>
+          </button>
         </div>
       </div>
 
       <div className="mt-6">
-        <CodeManager codebookId={codebookId} codes={codebook.codes} />
+        <CodeManager codebookId={codebookId} codes={codes} />
       </div>
     </main>
   );
