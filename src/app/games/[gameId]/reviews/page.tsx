@@ -92,6 +92,7 @@ export default async function ReviewsPage({
       </p>
 
       <form method="get" className="mt-6 grid grid-cols-2 gap-4 rounded-xl border border-gray-200 bg-white shadow-sm p-4 text-sm sm:grid-cols-4">
+        {/* Review type: recommended / purchase / early access */}
         <label className="flex flex-col gap-1">
           <span className="font-medium">Recommended</span>
           <select name="voted" defaultValue={sp.voted ?? ""} className="rounded border border-gray-300 px-2 py-1">
@@ -101,6 +102,27 @@ export default async function ReviewsPage({
           </select>
         </label>
 
+        <label className="flex flex-col gap-1">
+          <span className="font-medium">Purchase</span>
+          <select name="purchase" defaultValue={sp.purchase ?? ""} className="rounded border border-gray-300 px-2 py-1">
+            <option value="">All</option>
+            <option value="verified">Verified purchase only</option>
+            <option value="free">Received for free only</option>
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="font-medium">Early access</span>
+          <select name="earlyAccess" defaultValue={sp.earlyAccess ?? ""} className="rounded border border-gray-300 px-2 py-1">
+            <option value="">All</option>
+            <option value="true">Written during EA only</option>
+          </select>
+        </label>
+
+        {/* Row break so the next group starts on a fresh line */}
+        <div className="col-span-2 sm:col-span-4" />
+
+        {/* Who & when: playtime / language / date range */}
         <label className="flex flex-col gap-1">
           <span className="font-medium">Playtime</span>
           <select name="playtime" defaultValue={sp.playtime ?? ""} className="rounded border border-gray-300 px-2 py-1">
@@ -114,10 +136,14 @@ export default async function ReviewsPage({
         </label>
 
         <label className="flex flex-col gap-1">
-          <span className="font-medium">Early access</span>
-          <select name="earlyAccess" defaultValue={sp.earlyAccess ?? ""} className="rounded border border-gray-300 px-2 py-1">
+          <span className="font-medium">Language</span>
+          <select name="language" defaultValue={sp.language ?? ""} className="rounded border border-gray-300 px-2 py-1">
             <option value="">All</option>
-            <option value="true">Written during EA only</option>
+            {languages.map((l) => (
+              <option key={l.language} value={l.language}>
+                {l.language} ({l._count})
+              </option>
+            ))}
           </select>
         </label>
 
@@ -141,35 +167,13 @@ export default async function ReviewsPage({
           />
         </label>
 
-        <div className="col-span-2 border-t border-gray-100 pt-4 sm:col-span-4" />
-
+        {/* Quality & sort: how to order results, and substance thresholds */}
         <label className="flex flex-col gap-1">
           <span className="font-medium">Sort by</span>
           <select name="sort" defaultValue={sp.sort ?? "newest"} className="rounded border border-gray-300 px-2 py-1">
             {SORT_OPTIONS.map((s) => (
               <option key={s.value} value={s.value}>
                 {s.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="font-medium">Purchase</span>
-          <select name="purchase" defaultValue={sp.purchase ?? ""} className="rounded border border-gray-300 px-2 py-1">
-            <option value="">All</option>
-            <option value="verified">Verified purchase only</option>
-            <option value="free">Received for free only</option>
-          </select>
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="font-medium">Language</span>
-          <select name="language" defaultValue={sp.language ?? ""} className="rounded border border-gray-300 px-2 py-1">
-            <option value="">All</option>
-            {languages.map((l) => (
-              <option key={l.language} value={l.language}>
-                {l.language} ({l._count})
               </option>
             ))}
           </select>
