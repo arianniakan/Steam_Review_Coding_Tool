@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { parseSteamAppId } from "@/lib/steam";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { BackButton } from "@/components/BackButton";
 
 interface IngestResult {
   gameId: string;
@@ -57,6 +58,9 @@ export default function IngestPage() {
   return (
     <main className="mx-auto max-w-xl p-8">
       <Breadcrumbs items={[{ label: "Ingest" }]} />
+      <div className="mt-2">
+        <BackButton href="/" label="Home" />
+      </div>
       <h1 className="mt-2 text-2xl font-semibold">Ingest Steam Reviews</h1>
       <p className="mt-2 text-sm text-gray-500">
         Paste a Steam store URL or just the App ID (e.g.{" "}

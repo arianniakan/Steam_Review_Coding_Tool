@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { BackButton } from "@/components/BackButton";
 
 export default async function GamesPage() {
   const games = await prisma.game.findMany({
@@ -11,6 +12,9 @@ export default async function GamesPage() {
   return (
     <main className="mx-auto max-w-2xl p-8">
       <Breadcrumbs items={[{ label: "Games" }]} />
+      <div className="mt-2">
+        <BackButton href="/" label="Home" />
+      </div>
       <h1 className="mt-2 text-2xl font-semibold">Games</h1>
       <p className="mt-1 text-sm text-gray-500">
         Games with reviews ingested so far.
