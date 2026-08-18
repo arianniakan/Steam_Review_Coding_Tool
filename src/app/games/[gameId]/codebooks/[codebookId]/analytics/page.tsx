@@ -1,64 +1,89 @@
-import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { cohensKappa, interpretKappa } from "@/lib/kappa";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
 import { KappaGauge } from "./KappaGauge";
 import { CodeFrequencyChart } from "./CodeFrequencyChart";
 import { ThemeTimelineChart } from "./ThemeTimelineChart";
+import { getGameById, type Game } from "@/lib/localDb/queries/games";
+import { getCodebookById, type Codebook } from "@/lib/localDb/queries/codebooks";
+import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
+import { listTaggingsForCodebookAnalytics, type TaggingForAnalytics } from "@/lib/localDb/queries/taggings";
+import { listEventsForGame, type Event } from "@/lib/localDb/queries/events";
 
-function monthKey(d: Date) {
-  return d.toISOString().slice(0, 7); // YYYY-MM
+function monthKey(d: string | Date) {
+  return new Date(d).toISOString().slice(0, 7); // YYYY-MM
 }
 
-export default async function AnalyticsPage({
-  params,
-}: {
-  params: Promise<{ gameId: string; codebookId: string }>;
-}) {
-  const { gameId, codebookId } = await params;
+export default function AnalyticsPage() {
+  const { gameId, codebookId } = useParams<{ gameId: string; codebookId: string }>();
+  const [loading, setLoading] = useState(true);
+  const [game, setGame] = useState<Game | null>(null);
+  const [codebook, setCodebook] = useState<Codebook | null>(null);
+  const [codes, setCodes] = useState<Code[]>([]);
+  const [taggings, setTaggings] = useState<TaggingForAnalytics[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
 
-  const codebook = await prisma.codebook.findUnique({
-    where: { id: codebookId },
-    include: { game: true },
-  });
-  if (!codebook || codebook.gameId !== gameId) notFound();
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const cb = await getCodebookById(codebookId);
+      if (cancelled) return;
+      if (!cb || cb.gameId !== gameId) {
+        setCodebook(null);
+        setLoading(false);
+        return;
+      }
+      const [g, cds, tgs, evs] = await Promise.all([
+        getGameById(gameId),
+        listCodesForCodebook(codebookId),
+        listTaggingsForCodebookAnalytics(codebookId),
+        listEventsForGame(gameId),
+      ]);
+      if (cancelled) return;
+      setGame(g);
+      setCodebook(cb);
+      setCodes(cds);
+      setTaggings(tgs);
+      setEvents(evs);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [gameId, codebookId]);
 
-  const codes = await prisma.code.findMany({
-    where: { codebookId },
-    orderBy: { createdAt: "asc" },
-  });
+  if (loading) {
+    return (
+      <main className="mx-auto max-w-3xl p-8">
+        <p className="text-sm text-gray-500">Loading…</p>
+      </main>
+    );
+  }
 
-  const taggings = await prisma.tagging.findMany({
-    where: { codeId: { in: codes.map((c) => c.id) } },
-    include: {
-      coder: true,
-      review: { select: { id: true, timestampCreated: true } },
-    },
-  });
-
-  const events = await prisma.event.findMany({
-    where: { gameId },
-    orderBy: { date: "asc" },
-  });
+  if (!codebook || !game) {
+    return (
+      <main className="mx-auto max-w-3xl p-8">
+        <p className="text-sm text-gray-500">Codebook not found.</p>
+      </main>
+    );
+  }
 
   // --- Reliability (Cohen's kappa) ---
-  // Scope to reviews the human coder actually examined (tagged at least
-  // once) — comparing AI suggestions against untouched reviews wouldn't
-  // measure agreement, just AI activity.
   const humanReviewIds = [
-    ...new Set(
-      taggings.filter((t) => t.coder.kind === "HUMAN").map((t) => t.reviewId),
-    ),
+    ...new Set(taggings.filter((t) => t.coderKind === "HUMAN").map((t) => t.reviewId)),
   ];
 
   const pairs = humanReviewIds.flatMap((reviewId) =>
     codes.map((code) => ({
       humanPresent: taggings.some(
-        (t) => t.reviewId === reviewId && t.codeId === code.id && t.coder.kind === "HUMAN",
+        (t) => t.reviewId === reviewId && t.codeId === code.id && t.coderKind === "HUMAN",
       ),
       aiPresent: taggings.some(
-        (t) => t.reviewId === reviewId && t.codeId === code.id && t.coder.kind === "AI",
+        (t) => t.reviewId === reviewId && t.codeId === code.id && t.coderKind === "AI",
       ),
     })),
   );
@@ -71,8 +96,8 @@ export default async function AnalyticsPage({
       return {
         code,
         total: codeTaggings.length,
-        human: codeTaggings.filter((t) => t.coder.kind === "HUMAN").length,
-        ai: codeTaggings.filter((t) => t.coder.kind === "AI").length,
+        human: codeTaggings.filter((t) => t.coderKind === "HUMAN").length,
+        ai: codeTaggings.filter((t) => t.coderKind === "AI").length,
       };
     })
     .sort((a, b) => b.total - a.total);
@@ -106,7 +131,7 @@ export default async function AnalyticsPage({
   const monthsSet = new Set<string>();
   const seriesByCode = new Map<string, Map<string, number>>();
   for (const t of taggings) {
-    const month = monthKey(t.review.timestampCreated);
+    const month = monthKey(t.reviewTimestampCreated);
     monthsSet.add(month);
     if (!seriesByCode.has(t.codeId)) seriesByCode.set(t.codeId, new Map());
     const m = seriesByCode.get(t.codeId)!;
@@ -119,7 +144,7 @@ export default async function AnalyticsPage({
       <Breadcrumbs
         items={[
           { label: "Games", href: "/games" },
-          { label: codebook.game.name, href: `/games/${gameId}/reviews` },
+          { label: game.name, href: `/games/${gameId}/reviews` },
           { label: "Codebooks", href: `/games/${gameId}/codebooks` },
           { label: codebook.name, href: `/games/${gameId}/codebooks/${codebookId}` },
           { label: "Analytics" },
@@ -130,7 +155,7 @@ export default async function AnalyticsPage({
       </div>
       <div className="mt-2 flex items-center justify-between">
         <div>
-          <p className="text-sm text-gray-500">{codebook.game.name}</p>
+          <p className="text-sm text-gray-500">{game.name}</p>
           <h1 className="text-2xl font-semibold">{codebook.name} — Analytics</h1>
         </div>
       </div>
@@ -243,7 +268,7 @@ export default async function AnalyticsPage({
             <ul className="mt-1 text-xs text-gray-500">
               {events.map((e) => (
                 <li key={e.id}>
-                  {e.date.toISOString().slice(0, 10)} — {e.label}
+                  {new Date(e.date).toISOString().slice(0, 10)} — {e.label}
                 </li>
               ))}
             </ul>
