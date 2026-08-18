@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { CodeManager } from "./CodeManager";
+import { Breadcrumbs } from "@/components/Breadcrumbs";
 
 export default async function CodebookDetailPage({
   params,
@@ -19,7 +20,15 @@ export default async function CodebookDetailPage({
 
   return (
     <main className="mx-auto max-w-xl p-8">
-      <div className="flex items-center justify-between">
+      <Breadcrumbs
+        items={[
+          { label: "Games", href: "/games" },
+          { label: codebook.game.name, href: `/games/${gameId}/reviews` },
+          { label: "Codebooks", href: `/games/${gameId}/codebooks` },
+          { label: codebook.name },
+        ]}
+      />
+      <div className="mt-2 flex items-center justify-between">
         <div>
           <p className="text-sm text-gray-500">{codebook.game.name}</p>
           <h1 className="text-2xl font-semibold">{codebook.name}</h1>

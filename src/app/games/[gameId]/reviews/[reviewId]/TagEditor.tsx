@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { buildHighlightSegments } from "@/lib/highlightSpans";
 
 interface Code {
   id: string;
@@ -161,6 +162,11 @@ export function TagEditor({
     }
   }
 
+  const highlightSegments = useMemo(
+    () => buildHighlightSegments(reviewText, taggings),
+    [reviewText, taggings],
+  );
+
   function suggestionKey(s: Suggestion) {
     return `${s.codeId}:${s.spanText}`;
   }
@@ -208,7 +214,19 @@ export function TagEditor({
         onMouseUp={handleMouseUp}
         className="whitespace-pre-wrap rounded border border-gray-200 p-4 text-sm leading-relaxed"
       >
-        {reviewText}
+        {highlightSegments.map((seg, i) =>
+          seg.color ? (
+            <mark
+              key={i}
+              title={seg.label ?? undefined}
+              style={{ backgroundColor: seg.color + "55" }}
+            >
+              {seg.text}
+            </mark>
+          ) : (
+            <span key={i}>{seg.text}</span>
+          ),
+        )}
       </p>
 
       <form

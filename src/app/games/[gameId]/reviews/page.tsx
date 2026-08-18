@@ -1,46 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { PLAYTIME_TIERS, getPlaytimeTier } from "@/lib/playtimeTiers";
-import type { Prisma } from "@/generated/prisma/client";
+import { PLAYTIME_TIERS } from "@/lib/playtimeTiers";
+import { buildReviewWhere, type ReviewSearchParams } from "@/lib/reviewFilters";
 import { SavedSamples } from "./SavedSamples";
+import { Breadcrumbs } from "@/components/Breadcrumbs";
 
 const PAGE_SIZE = 25;
 
-interface SearchParams {
-  voted?: string; // "up" | "down" | undefined (= all)
-  earlyAccess?: string; // "true" | undefined (= all)
-  playtime?: string; // one of PLAYTIME_TIERS values
-  from?: string; // ISO date
-  to?: string; // ISO date
-  page?: string;
-}
-
-function buildWhere(gameId: string, sp: SearchParams): Prisma.ReviewWhereInput {
-  const where: Prisma.ReviewWhereInput = { gameId };
-
-  if (sp.voted === "up") where.votedUp = true;
-  if (sp.voted === "down") where.votedUp = false;
-
-  if (sp.earlyAccess === "true") where.writtenDuringEarlyAccess = true;
-
-  const tier = sp.playtime ? getPlaytimeTier(sp.playtime) : undefined;
-  if (tier) {
-    where.playtimeForever = {
-      gte: tier.minMinutes,
-      ...(tier.maxMinutes !== null ? { lt: tier.maxMinutes } : {}),
-    };
-  }
-
-  if (sp.from || sp.to) {
-    where.timestampCreated = {
-      ...(sp.from ? { gte: new Date(sp.from) } : {}),
-      ...(sp.to ? { lte: new Date(sp.to) } : {}),
-    };
-  }
-
-  return where;
-}
+type SearchParams = ReviewSearchParams;
 
 export default async function ReviewsPage({
   params,
@@ -56,15 +24,17 @@ export default async function ReviewsPage({
   if (!game) notFound();
 
   const page = Math.max(Number(sp.page) || 1, 1);
-  const where = buildWhere(gameId, sp);
+  const where = buildReviewWhere(gameId, sp);
 
-  const [total, reviews, savedSamples] = await Promise.all([
+  const [total, codedCount, reviews, savedSamples] = await Promise.all([
     prisma.review.count({ where }),
+    prisma.review.count({ where: { ...where, taggings: { some: {} } } }),
     prisma.review.findMany({
       where,
       orderBy: { timestampCreated: "desc" },
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
+      include: { _count: { select: { taggings: true } } },
     }),
     prisma.savedSample.findMany({ where: { gameId }, orderBy: { createdAt: "desc" } }),
   ]);
@@ -87,14 +57,21 @@ export default async function ReviewsPage({
 
   return (
     <main className="mx-auto max-w-3xl p-8">
-      <div className="flex items-center justify-between">
+      <Breadcrumbs
+        items={[
+          { label: "Games", href: "/games" },
+          { label: game.name },
+        ]}
+      />
+      <div className="mt-2 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">{game.name}</h1>
         <Link href={`/games/${gameId}/codebooks`} className="text-sm underline">
           Codebooks →
         </Link>
       </div>
       <p className="mt-1 text-sm text-gray-500">
-        {total} review{total === 1 ? "" : "s"} matching current filters
+        {total} review{total === 1 ? "" : "s"} matching current filters ·{" "}
+        {codedCount} of {total} coded
       </p>
 
       <form method="get" className="mt-6 grid grid-cols-2 gap-4 rounded border border-gray-200 p-4 text-sm sm:grid-cols-4">
@@ -171,10 +148,16 @@ export default async function ReviewsPage({
                   <span>Early access</span>
                 </>
               )}
+              <span>·</span>
+              {r._count.taggings > 0 ? (
+                <span className="text-green-700">✓ Coded ({r._count.taggings})</span>
+              ) : (
+                <span>Not yet coded</span>
+              )}
             </div>
             <p className="mt-2 whitespace-pre-wrap">{r.text}</p>
             <Link
-              href={`/games/${gameId}/reviews/${r.id}`}
+              href={`/games/${gameId}/reviews/${r.id}?${filterParams.toString()}`}
               className="mt-2 inline-block text-xs underline"
             >
               Tag this review →

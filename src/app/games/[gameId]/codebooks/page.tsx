@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { CreateCodebookForm } from "./CreateCodebookForm";
+import { Breadcrumbs } from "@/components/Breadcrumbs";
 
 export default async function CodebooksPage({
   params,
@@ -21,7 +22,13 @@ export default async function CodebooksPage({
 
   return (
     <main className="mx-auto max-w-xl p-8">
-      <h1 className="text-2xl font-semibold">{game.name} — Codebooks</h1>
+      <Breadcrumbs
+        items={[
+          { label: "Games", href: "/games" },
+          { label: game.name, href: `/games/${gameId}/reviews` },
+        ]}
+      />
+      <h1 className="mt-2 text-2xl font-semibold">{game.name} — Codebooks</h1>
       <p className="mt-1 text-sm text-gray-500">
         A codebook is a named set of codes for tagging review segments. Version
         by creating a new codebook rather than editing one mid-analysis.

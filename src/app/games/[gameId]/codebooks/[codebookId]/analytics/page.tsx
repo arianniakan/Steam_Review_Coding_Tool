@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { cohensKappa, interpretKappa } from "@/lib/kappa";
+import { Breadcrumbs } from "@/components/Breadcrumbs";
 
 function monthKey(d: Date) {
   return d.toISOString().slice(0, 7); // YYYY-MM
@@ -113,7 +114,16 @@ export default async function AnalyticsPage({
 
   return (
     <main className="mx-auto max-w-3xl p-8">
-      <div className="flex items-center justify-between">
+      <Breadcrumbs
+        items={[
+          { label: "Games", href: "/games" },
+          { label: codebook.game.name, href: `/games/${gameId}/reviews` },
+          { label: "Codebooks", href: `/games/${gameId}/codebooks` },
+          { label: codebook.name, href: `/games/${gameId}/codebooks/${codebookId}` },
+          { label: "Analytics" },
+        ]}
+      />
+      <div className="mt-2 flex items-center justify-between">
         <div>
           <p className="text-sm text-gray-500">{codebook.game.name}</p>
           <h1 className="text-2xl font-semibold">{codebook.name} — Analytics</h1>

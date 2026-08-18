@@ -14,6 +14,9 @@ export default function Home() {
         <Link href="/ingest" className="underline">
           Ingest reviews for a game →
         </Link>
+        <Link href="/games" className="underline">
+          Browse ingested games →
+        </Link>
       </div>
     </main>
   );

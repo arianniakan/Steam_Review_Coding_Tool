@@ -3,16 +3,24 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { TagEditor } from "./TagEditor";
 import { CodebookSwitcher } from "./CodebookSwitcher";
+import { ReviewNav } from "./ReviewNav";
+import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { buildReviewWhere, type ReviewSearchParams } from "@/lib/reviewFilters";
+
+type SearchParams = ReviewSearchParams & { codebookId?: string };
 
 export default async function ReviewDetailPage({
   params,
   searchParams,
 }: {
   params: Promise<{ gameId: string; reviewId: string }>;
-  searchParams: Promise<{ codebookId?: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   const { gameId, reviewId } = await params;
   const sp = await searchParams;
+
+  const game = await prisma.game.findUnique({ where: { id: gameId } });
+  if (!game) notFound();
 
   const review = await prisma.review.findUnique({ where: { id: reviewId } });
   if (!review || review.gameId !== gameId) notFound();
@@ -22,10 +30,18 @@ export default async function ReviewDetailPage({
     orderBy: { createdAt: "desc" },
   });
 
+  const breadcrumbItems = [
+    { label: "Games", href: "/games" },
+    { label: game.name, href: `/games/${gameId}/reviews` },
+    { label: "Reviews", href: `/games/${gameId}/reviews` },
+    { label: "Review" },
+  ];
+
   if (codebooks.length === 0) {
     return (
       <main className="mx-auto max-w-2xl p-8">
-        <p className="text-sm text-gray-500">
+        <Breadcrumbs items={breadcrumbItems} />
+        <p className="mt-4 text-sm text-gray-500">
           No codebooks exist for this game yet.{" "}
           <Link href={`/games/${gameId}/codebooks`} className="underline">
             Create one first →
@@ -38,7 +54,7 @@ export default async function ReviewDetailPage({
   const activeCodebook =
     codebooks.find((cb) => cb.id === sp.codebookId) ?? codebooks[0];
 
-  const [codes, taggings] = await Promise.all([
+  const [codes, taggings, orderedReviews] = await Promise.all([
     prisma.code.findMany({
       where: { codebookId: activeCodebook.id },
       orderBy: { createdAt: "asc" },
@@ -48,11 +64,45 @@ export default async function ReviewDetailPage({
       include: { code: true, coder: true },
       orderBy: { createdAt: "desc" },
     }),
+    prisma.review.findMany({
+      where: buildReviewWhere(gameId, sp),
+      orderBy: { timestampCreated: "desc" },
+      select: { id: true },
+    }),
   ]);
+
+  const currentIndex = orderedReviews.findIndex((r) => r.id === reviewId);
+  const position = currentIndex === -1 ? 1 : currentIndex + 1;
+  const prevId = currentIndex > 0 ? orderedReviews[currentIndex - 1]?.id : undefined;
+  const nextId =
+    currentIndex !== -1 && currentIndex < orderedReviews.length - 1
+      ? orderedReviews[currentIndex + 1]?.id
+      : undefined;
+
+  const navQuery = new URLSearchParams();
+  if (sp.voted) navQuery.set("voted", sp.voted);
+  if (sp.earlyAccess) navQuery.set("earlyAccess", sp.earlyAccess);
+  if (sp.playtime) navQuery.set("playtime", sp.playtime);
+  if (sp.from) navQuery.set("from", sp.from);
+  if (sp.to) navQuery.set("to", sp.to);
+  if (sp.codebookId) navQuery.set("codebookId", sp.codebookId);
 
   return (
     <main className="mx-auto max-w-2xl p-8">
-      <div className="flex items-center justify-between">
+      <Breadcrumbs items={breadcrumbItems} />
+
+      <div className="mt-4">
+        <ReviewNav
+          gameId={gameId}
+          query={navQuery.toString()}
+          position={position}
+          total={orderedReviews.length}
+          prevId={prevId}
+          nextId={nextId}
+        />
+      </div>
+
+      <div className="mt-4 flex items-center justify-between">
         <Link href={`/games/${gameId}/reviews`} className="text-sm underline">
           ← Back to reviews
         </Link>
@@ -87,6 +137,17 @@ export default async function ReviewDetailPage({
           coder: { name: t.coder.name, kind: t.coder.kind },
         }))}
       />
+
+      <div className="mt-6">
+        <ReviewNav
+          gameId={gameId}
+          query={navQuery.toString()}
+          position={position}
+          total={orderedReviews.length}
+          prevId={prevId}
+          nextId={nextId}
+        />
+      </div>
     </main>
   );
 }
