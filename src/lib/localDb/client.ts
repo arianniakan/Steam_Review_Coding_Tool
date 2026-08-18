@@ -6,7 +6,7 @@ import type { PGlite } from "@electric-sql/pglite";
 
 let dbPromise: Promise<PGlite> | null = null;
 
-async function createClient(): Promise<PGlite> {
+async function createClient(loadDataDir?: Blob | File): Promise<PGlite> {
   // Some environments (seen in automated browser testing) intermittently
   // fail to write PGlite's wasm/data assets to the HTTP disk cache
   // (net::ERR_CACHE_WRITE_FAILURE), which surfaces as a hard fetch failure.
@@ -17,7 +17,7 @@ async function createClient(): Promise<PGlite> {
 
   try {
     const { PGlite } = await import("@electric-sql/pglite");
-    const db = new PGlite("idb://project2b");
+    const db = new PGlite("idb://project2b", loadDataDir ? { loadDataDir } : undefined);
 
     // Constructing PGlite doesn't wait for its internal asset loading to
     // finish — that happens lazily and only becomes observable (awaitable)
@@ -27,7 +27,9 @@ async function createClient(): Promise<PGlite> {
     const schemaCheck = await db.query<{ exists: boolean }>(
       `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'Game') AS exists`,
     );
-    if (!schemaCheck.rows[0]?.exists) {
+    // A loaded dump already has the full schema — only bootstrap a fresh one
+    // when there's nothing to load and no schema exists yet.
+    if (!loadDataDir && !schemaCheck.rows[0]?.exists) {
       const schemaSql = await originalFetch("/localdb/schema.sql", { cache: "no-store" }).then(
         (r) => r.text(),
       );
@@ -43,6 +45,19 @@ async function createClient(): Promise<PGlite> {
 export function getDb(): Promise<PGlite> {
   if (!dbPromise) dbPromise = createClient();
   return dbPromise;
+}
+
+// Replaces the current database entirely with one restored from a
+// previously-exported project file (see projectFile.ts). Used for "Open
+// project" — closes the existing connection and re-initializes against the
+// same idb:// name so it keeps persisting normally afterward.
+export async function resetDbFromFile(file: File): Promise<void> {
+  if (dbPromise) {
+    const existing = await dbPromise;
+    await existing.close();
+  }
+  dbPromise = createClient(file);
+  await dbPromise;
 }
 
 export function newId(): string {
