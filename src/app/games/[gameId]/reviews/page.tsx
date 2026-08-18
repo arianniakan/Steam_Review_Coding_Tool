@@ -166,28 +166,27 @@ export default async function ReviewsPage({
           </select>
         </label>
 
-        <div className="flex gap-2">
-          <label className="flex flex-1 flex-col gap-1">
-            <span className="font-medium">Min. helpful votes</span>
-            <input
-              type="number"
-              min={0}
-              name="minVotes"
-              defaultValue={sp.minVotes ?? ""}
-              className="rounded border border-gray-300 px-2 py-1"
-            />
-          </label>
-          <label className="flex flex-1 flex-col gap-1">
-            <span className="font-medium">Min. length (chars)</span>
-            <input
-              type="number"
-              min={0}
-              name="minLength"
-              defaultValue={sp.minLength ?? ""}
-              className="rounded border border-gray-300 px-2 py-1"
-            />
-          </label>
-        </div>
+        <label className="flex flex-col gap-1">
+          <span className="font-medium">Min. helpful votes</span>
+          <input
+            type="number"
+            min={0}
+            name="minVotes"
+            defaultValue={sp.minVotes ?? ""}
+            className="w-full min-w-0 rounded border border-gray-300 px-2 py-1"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="font-medium">Min. length (chars)</span>
+          <input
+            type="number"
+            min={0}
+            name="minLength"
+            defaultValue={sp.minLength ?? ""}
+            className="w-full min-w-0 rounded border border-gray-300 px-2 py-1"
+          />
+        </label>
 
         <div className="col-span-2 flex items-end gap-2 sm:col-span-4">
           <button type="submit" className="rounded-lg bg-black px-4 py-1.5 text-white">
