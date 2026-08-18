@@ -121,16 +121,25 @@ export default async function ReviewsPage({
           </select>
         </label>
 
-        <div className="col-span-2 flex gap-2 sm:col-span-1">
-          <label className="flex flex-1 flex-col gap-1">
-            <span className="font-medium">From</span>
-            <input type="date" name="from" defaultValue={sp.from ?? ""} className="rounded border border-gray-300 px-2 py-1" />
-          </label>
-          <label className="flex flex-1 flex-col gap-1">
-            <span className="font-medium">To</span>
-            <input type="date" name="to" defaultValue={sp.to ?? ""} className="rounded border border-gray-300 px-2 py-1" />
-          </label>
-        </div>
+        <label className="flex flex-col gap-1">
+          <span className="font-medium">From</span>
+          <input
+            type="date"
+            name="from"
+            defaultValue={sp.from ?? ""}
+            className="w-full min-w-0 rounded border border-gray-300 px-2 py-1"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="font-medium">To</span>
+          <input
+            type="date"
+            name="to"
+            defaultValue={sp.to ?? ""}
+            className="w-full min-w-0 rounded border border-gray-300 px-2 py-1"
+          />
+        </label>
 
         <div className="col-span-2 border-t border-gray-100 pt-4 sm:col-span-4" />
 
