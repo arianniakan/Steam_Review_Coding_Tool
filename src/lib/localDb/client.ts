@@ -14,21 +14,30 @@ async function createClient(): Promise<PGlite> {
   // negligible cost (these assets are fetched once per session anyway).
   const originalFetch = window.fetch;
   window.fetch = (input, init) => originalFetch(input, { ...init, cache: "no-store" });
-  const { PGlite } = await import("@electric-sql/pglite");
-  const db = new PGlite("idb://project2b");
-  window.fetch = originalFetch;
 
-  const schemaCheck = await db.query<{ exists: boolean }>(
-    `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'Game') AS exists`,
-  );
-  if (!schemaCheck.rows[0]?.exists) {
-    const schemaSql = await fetch("/localdb/schema.sql", { cache: "no-store" }).then((r) =>
-      r.text(),
+  try {
+    const { PGlite } = await import("@electric-sql/pglite");
+    const db = new PGlite("idb://project2b");
+
+    // Constructing PGlite doesn't wait for its internal asset loading to
+    // finish — that happens lazily and only becomes observable (awaitable)
+    // once the first real query runs. Keep the cache-bypass patch active
+    // through this first query so any deferred asset fetches are covered
+    // too, not just the ones triggered synchronously during construction.
+    const schemaCheck = await db.query<{ exists: boolean }>(
+      `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'Game') AS exists`,
     );
-    await db.exec(schemaSql);
-  }
+    if (!schemaCheck.rows[0]?.exists) {
+      const schemaSql = await originalFetch("/localdb/schema.sql", { cache: "no-store" }).then(
+        (r) => r.text(),
+      );
+      await db.exec(schemaSql);
+    }
 
-  return db;
+    return db;
+  } finally {
+    window.fetch = originalFetch;
+  }
 }
 
 export function getDb(): Promise<PGlite> {
