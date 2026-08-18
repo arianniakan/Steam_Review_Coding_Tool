@@ -15,7 +15,7 @@ export default async function CodebooksPage({
   const game = await prisma.game.findUnique({ where: { id: gameId } });
   if (!game) notFound();
 
-  const [codebooks, languages] = await Promise.all([
+  const [codebooks, languages, savedSamples] = await Promise.all([
     prisma.codebook.findMany({
       where: { gameId },
       orderBy: { createdAt: "desc" },
@@ -27,6 +27,7 @@ export default async function CodebooksPage({
       _count: true,
       orderBy: { _count: { language: "desc" } },
     }),
+    prisma.savedSample.findMany({ where: { gameId }, orderBy: { createdAt: "desc" } }),
   ]);
 
   return (
@@ -63,7 +64,7 @@ export default async function CodebooksPage({
       </ul>
 
       <CreateCodebookForm gameId={gameId} />
-      <AutoCodebookGenerator gameId={gameId} languages={languages} />
+      <AutoCodebookGenerator gameId={gameId} languages={languages} savedSamples={savedSamples} />
     </main>
   );
 }

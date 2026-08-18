@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { COLOR_PRESETS } from "./[codebookId]/CodeManager";
 import { PLAYTIME_TIERS } from "@/lib/playtimeTiers";
+import { ReviewPicker } from "./ReviewPicker";
 
 interface Proposal {
   label: string;
@@ -37,19 +38,33 @@ const EMPTY_FILTERS: CriteriaFilters = {
   minLength: "",
 };
 
+const FILTER_KEYS = Object.keys(EMPTY_FILTERS) as (keyof CriteriaFilters)[];
+
+interface SavedSample {
+  id: string;
+  name: string;
+  query: string;
+}
+
 export function AutoCodebookGenerator({
   gameId,
   languages,
+  savedSamples,
 }: {
   gameId: string;
   languages: { language: string; _count: number }[];
+  savedSamples: SavedSample[];
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [focus, setFocus] = useState("");
+  const [mode, setMode] = useState<"auto" | "handpick">("auto");
   const [sampleSize, setSampleSize] = useState(40);
+  const [ratio, setRatio] = useState(50);
+  const [sampleMode, setSampleMode] = useState<"helpful" | "random">("helpful");
   const [targetCount, setTargetCount] = useState(8);
   const [filters, setFilters] = useState<CriteriaFilters>(EMPTY_FILTERS);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,24 +77,48 @@ export function AutoCodebookGenerator({
     setFilters((prev) => ({ ...prev, ...patch }));
   }
 
+  function loadSavedSample(query: string) {
+    if (!query) return;
+    const params = new URLSearchParams(query);
+    const next = { ...EMPTY_FILTERS };
+    for (const key of FILTER_KEYS) {
+      next[key] = params.get(key) ?? "";
+    }
+    setFilters(next);
+    toast.success("Loaded criteria from saved sample");
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     setGenerating(true);
     setError(null);
     setProposals(null);
     try {
-      const activeFilters = Object.fromEntries(
-        Object.entries(filters).filter(([, v]) => v !== ""),
-      );
+      const body: Record<string, unknown> =
+        mode === "handpick"
+          ? { targetCount, focus: focus || undefined, reviewIds: [...selectedIds] }
+          : {
+              sampleSize,
+              targetCount,
+              focus: focus || undefined,
+              ratio,
+              sampleMode,
+              filters: Object.fromEntries(Object.entries(filters).filter(([, v]) => v !== "")),
+            };
+
       const res = await fetch(`/api/games/${gameId}/suggest-codebook`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sampleSize,
-          targetCount,
-          focus: focus || undefined,
-          filters: activeFilters,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to generate codebook");
@@ -150,6 +189,8 @@ export function AutoCodebookGenerator({
     );
   }
 
+  const canSubmit = mode === "auto" || selectedIds.size > 0;
+
   return (
     <div className="mt-4 rounded-xl border border-gray-200 bg-white shadow-sm p-4 text-sm">
       <div className="flex items-center justify-between">
@@ -166,10 +207,8 @@ export function AutoCodebookGenerator({
         </button>
       </div>
       <p className="mt-1 text-xs text-gray-500">
-        The AI reads a sample of real reviews matching the criteria below (split evenly
-        between recommended and not-recommended unless you pin one side, favoring the most
-        helpful reviews) and proposes a starting codebook. Nothing is created until you
-        review and select codes.
+        The AI reads a sample of real reviews and proposes a starting codebook. Nothing is
+        created until you review and select codes.
       </p>
 
       {!proposals && (
@@ -185,10 +224,49 @@ export function AutoCodebookGenerator({
             />
           </label>
 
+          <div className="flex gap-4 text-xs">
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                checked={mode === "auto"}
+                onChange={() => setMode("auto")}
+              />
+              Automatic sampling
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input
+                type="radio"
+                checked={mode === "handpick"}
+                onChange={() => setMode("handpick")}
+              />
+              Hand-pick specific reviews
+            </label>
+          </div>
+
           <div className="rounded border border-gray-200 p-3">
-            <p className="text-xs font-medium text-gray-500">
-              Which reviews should the AI look at?
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-gray-500">
+                {mode === "auto"
+                  ? "Which reviews should the AI look at?"
+                  : "Search filters for hand-picking reviews"}
+              </p>
+              {savedSamples.length > 0 && (
+                <select
+                  defaultValue=""
+                  onChange={(e) => loadSavedSample(e.target.value)}
+                  className="rounded border border-gray-300 px-1.5 py-0.5 text-xs"
+                >
+                  <option value="" disabled>
+                    Load from saved sample…
+                  </option>
+                  {savedSamples.map((s) => (
+                    <option key={s.id} value={s.query}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
             <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3">
               <label className="flex flex-col gap-1">
                 <span>Recommended</span>
@@ -302,20 +380,60 @@ export function AutoCodebookGenerator({
                 />
               </label>
             </div>
+
+            {mode === "auto" && filters.voted === "" && (
+              <label className="mt-3 flex flex-col gap-1 text-xs">
+                <span>
+                  % Recommended in sample (rest is not-recommended) — {ratio}%
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={ratio}
+                  onChange={(e) => setRatio(Number(e.target.value))}
+                />
+              </label>
+            )}
           </div>
 
+          {mode === "handpick" && (
+            <ReviewPicker
+              gameId={gameId}
+              filters={filters}
+              selectedIds={selectedIds}
+              onToggle={toggleSelected}
+            />
+          )}
+
           <div className="flex gap-3">
-            <label className="flex flex-1 flex-col gap-1">
-              <span className="font-medium">Sample size</span>
-              <input
-                type="number"
-                min={10}
-                max={100}
-                value={sampleSize}
-                onChange={(e) => setSampleSize(Number(e.target.value))}
-                className="rounded border border-gray-300 px-2 py-1"
-              />
-            </label>
+            {mode === "auto" && (
+              <label className="flex flex-1 flex-col gap-1">
+                <span className="font-medium">Sample size</span>
+                <input
+                  type="number"
+                  min={10}
+                  max={100}
+                  value={sampleSize}
+                  onChange={(e) => setSampleSize(Number(e.target.value))}
+                  className="rounded border border-gray-300 px-2 py-1"
+                />
+              </label>
+            )}
+            {mode === "auto" && (
+              <label className="flex flex-1 flex-col gap-1">
+                <span className="font-medium">Sample by</span>
+                <select
+                  value={sampleMode}
+                  onChange={(e) => setSampleMode(e.target.value as "helpful" | "random")}
+                  className="rounded border border-gray-300 px-2 py-1"
+                >
+                  <option value="helpful">Most helpful (Steam score)</option>
+                  <option value="random">Random</option>
+                </select>
+              </label>
+            )}
             <label className="flex flex-1 flex-col gap-1">
               <span className="font-medium">Target # of codes</span>
               <input
@@ -330,10 +448,14 @@ export function AutoCodebookGenerator({
           </div>
           <button
             type="submit"
-            disabled={generating}
+            disabled={generating || !canSubmit}
             className="self-start rounded-lg bg-black px-4 py-1.5 text-white disabled:opacity-50"
           >
-            {generating ? "Reading reviews…" : "Generate proposals"}
+            {generating
+              ? "Reading reviews…"
+              : mode === "handpick"
+                ? `Generate proposals from ${selectedIds.size} selected review(s)`
+                : "Generate proposals"}
           </button>
           {error && <p className="text-red-600">{error}</p>}
         </form>
