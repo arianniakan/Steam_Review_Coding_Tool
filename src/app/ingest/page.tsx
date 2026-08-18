@@ -2,9 +2,20 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { parseSteamAppId } from "@/lib/steam";
+import { parseSteamAppId, type SteamReview, type SteamAppDetails } from "@/lib/steam";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
+import { upsertGameFromSteam } from "@/lib/localDb/queries/games";
+import { upsertReviewsBatch, type IngestReviewRow } from "@/lib/localDb/queries/reviews";
+
+interface SteamIngestResponse {
+  steamAppId: number;
+  gameDetails: SteamAppDetails;
+  reviews: SteamReview[];
+  pagesFetched: number;
+  hasMore: boolean;
+  totalReviewsOnSteam: number;
+}
 
 interface IngestResult {
   gameId: string;
@@ -42,10 +53,49 @@ export default function IngestPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ maxPages }),
       });
-      const data = await res.json();
+      const data = (await res.json()) as SteamIngestResponse & { error?: string };
       if (!res.ok) throw new Error(data.error ?? "Ingestion failed");
-      setResult(data);
-      toast.success(`Ingested ${data.ingestedCount} review(s) for ${data.gameName}`);
+
+      const game = await upsertGameFromSteam(data.steamAppId, data.gameDetails);
+
+      const rows: IngestReviewRow[] = data.reviews.map((r) => ({
+        steamReviewId: r.recommendationid,
+        text: r.review,
+        votedUp: r.voted_up,
+        playtimeForever: r.author.playtime_forever,
+        votesUp: r.votes_up,
+        votesFunny: r.votes_funny,
+        weightedVoteScore: Number.parseFloat(r.weighted_vote_score) || 0,
+        timestampCreated: new Date(r.timestamp_created * 1000).toISOString(),
+        timestampUpdated: new Date(r.timestamp_updated * 1000).toISOString(),
+        writtenDuringEarlyAccess: r.written_during_early_access,
+        steamPurchase: r.steam_purchase,
+        receivedForFree: r.received_for_free,
+        commentCount: r.comment_count,
+        language: r.language,
+        textLength: r.review.length,
+        playtimeAtReview: r.author.playtime_at_review ?? null,
+        playtimeLastTwoWeeks: r.author.playtime_last_two_weeks ?? null,
+        authorNumGamesOwned: r.author.num_games_owned ?? null,
+        authorNumReviews: r.author.num_reviews ?? null,
+        authorLastPlayed: r.author.last_played
+          ? new Date(r.author.last_played * 1000).toISOString()
+          : null,
+      }));
+
+      const { insertedCount, updatedCount } = await upsertReviewsBatch(game.id, rows);
+
+      setResult({
+        gameId: game.id,
+        gameName: game.name,
+        steamAppId: data.steamAppId,
+        fetchedFromSteam: data.reviews.length,
+        ingestedCount: insertedCount,
+        updatedCount,
+        pagesFetched: data.pagesFetched,
+        hasMore: data.hasMore,
+      });
+      toast.success(`Ingested ${insertedCount} review(s) for ${game.name}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong";
       setError(message);

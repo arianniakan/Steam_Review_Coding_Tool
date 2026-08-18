@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { fetchAppDetails, fetchReviewPage, type SteamReview } from "@/lib/steam";
 
 const MAX_PAGES_CAP = 30;
@@ -10,11 +9,16 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Steam-only proxy — the local-first migration moved the database into the
+// browser, so this route no longer writes anything. It just does the Steam
+// fetching (which needs a server-side request, not a browser one, to avoid
+// CORS/rate-limit surprises) and hands the raw data back to the client,
+// which performs the actual upsert into local PGlite.
 export async function POST(
   request: Request,
-  // Path segment is named `gameId` to match the sibling `codebooks` route
-  // (Next.js requires one param name per path level) — the value passed in
-  // is still the Steam App ID, not the internal DB id.
+  // Path segment is named `gameId` to match the sibling route naming
+  // convention elsewhere in the app — the value passed in is still the
+  // Steam App ID, not an internal DB id (there's no DB here anymore).
   context: { params: Promise<{ gameId: string }> },
 ) {
   const { gameId: appid } = await context.params;
@@ -34,19 +38,6 @@ export async function POST(
   );
 
   const details = await fetchAppDetails(appId);
-  const gameData = {
-    name: details.name,
-    headerImage: details.headerImage,
-    shortDescription: details.shortDescription,
-    genres: details.genres,
-    releaseDate: details.releaseDate,
-    developers: details.developers,
-  };
-  const game = await prisma.game.upsert({
-    where: { steamAppId: appId },
-    update: gameData,
-    create: { steamAppId: appId, ...gameData },
-  });
 
   const allReviews: SteamReview[] = [];
   let cursor = "*";
@@ -63,62 +54,10 @@ export async function POST(
     if (pagesFetched < maxPages - 1) await sleep(PAGE_DELAY_MS);
   }
 
-  const rows = allReviews.map((r) => ({
-    gameId: game.id,
-    steamReviewId: r.recommendationid,
-    text: r.review,
-    votedUp: r.voted_up,
-    playtimeForever: r.author.playtime_forever,
-    votesUp: r.votes_up,
-    votesFunny: r.votes_funny,
-    weightedVoteScore: Number.parseFloat(r.weighted_vote_score) || 0,
-    timestampCreated: new Date(r.timestamp_created * 1000),
-    timestampUpdated: new Date(r.timestamp_updated * 1000),
-    writtenDuringEarlyAccess: r.written_during_early_access,
-    steamPurchase: r.steam_purchase,
-    receivedForFree: r.received_for_free,
-    commentCount: r.comment_count,
-    language: r.language,
-    textLength: r.review.length,
-    playtimeAtReview: r.author.playtime_at_review ?? null,
-    playtimeLastTwoWeeks: r.author.playtime_last_two_weeks ?? null,
-    authorNumGamesOwned: r.author.num_games_owned ?? null,
-    authorNumReviews: r.author.num_reviews ?? null,
-    authorLastPlayed: r.author.last_played ? new Date(r.author.last_played * 1000) : null,
-  }));
-
-  // Upsert (not createMany+skipDuplicates) so re-running ingest on an
-  // already-ingested game backfills newly-added fields on existing rows
-  // instead of silently no-opping on the duplicate steamReviewId.
-  const existingCount = rows.length
-    ? await prisma.review.count({
-        where: { gameId: game.id, steamReviewId: { in: rows.map((r) => r.steamReviewId) } },
-      })
-    : 0;
-
-  const UPSERT_BATCH_SIZE = 50;
-  for (let i = 0; i < rows.length; i += UPSERT_BATCH_SIZE) {
-    const batch = rows.slice(i, i + UPSERT_BATCH_SIZE);
-    await Promise.all(
-      batch.map((row) =>
-        prisma.review.upsert({
-          where: { steamReviewId: row.steamReviewId },
-          create: row,
-          update: row,
-        }),
-      ),
-    );
-  }
-
-  const insertedCount = rows.length - existingCount;
-
   return NextResponse.json({
-    gameId: game.id,
-    gameName: game.name,
     steamAppId: appId,
-    fetchedFromSteam: allReviews.length,
-    ingestedCount: insertedCount,
-    updatedCount: existingCount,
+    gameDetails: details,
+    reviews: allReviews,
     pagesFetched,
     hasMore: pagesFetched === maxPages,
     totalReviewsOnSteam,
