@@ -4,6 +4,9 @@ import type { PGlite } from "@electric-sql/pglite";
 // Dynamically imports PGlite so its ~5MB wasm/data assets are never pulled
 // into a server bundle or evaluated during SSR.
 
+const PGLITE_IDB_NAME = "/pglite/project2b";
+const INIT_FLAG_KEY = "project2b-initialized";
+
 let dbPromise: Promise<PGlite> | null = null;
 
 async function createClient(loadDataDir?: Blob | File): Promise<PGlite> {
@@ -42,8 +45,54 @@ async function createClient(loadDataDir?: Blob | File): Promise<PGlite> {
   }
 }
 
+// A brand-new visitor gets pre-loaded with a real example analysis (see
+// public/localdb/seed.tar.gz) instead of an empty app. This has to be
+// decided *before* constructing PGlite, since loadDataDir is a
+// constructor-only option — by the time a query could tell us the database
+// is empty, it's too late to load the seed into it. A localStorage flag
+// tracks whether this browser has already been initialized (by either the
+// seed or a blank schema); indexedDB.databases() is a defensive extra check
+// so that a cleared localStorage flag can never cause a real local database
+// to get seeded over (that check itself isn't supported everywhere, which
+// is fine — it only ever makes seeding more conservative, never less).
+async function hasExistingLocalDatabase(): Promise<boolean> {
+  try {
+    if (!("databases" in indexedDB)) return false;
+    const dbs = await indexedDB.databases();
+    return dbs.some((d) => d.name === PGLITE_IDB_NAME);
+  } catch {
+    return false;
+  }
+}
+
+function isFirstVisit(): boolean {
+  return localStorage.getItem(INIT_FLAG_KEY) !== "1";
+}
+
+function markInitialized(): void {
+  localStorage.setItem(INIT_FLAG_KEY, "1");
+}
+
+async function createInitialClient(): Promise<PGlite> {
+  if (!isFirstVisit() || (await hasExistingLocalDatabase())) {
+    markInitialized();
+    return createClient();
+  }
+  try {
+    const res = await fetch("/localdb/seed.tar.gz", { cache: "no-store" });
+    if (!res.ok) throw new Error(`Seed fetch failed: ${res.status}`);
+    const seed = await res.blob();
+    return await createClient(seed);
+  } catch (err) {
+    console.error("Failed to load seed data — starting with an empty database instead.", err);
+    return createClient();
+  } finally {
+    markInitialized();
+  }
+}
+
 export function getDb(): Promise<PGlite> {
-  if (!dbPromise) dbPromise = createClient();
+  if (!dbPromise) dbPromise = createInitialClient();
   return dbPromise;
 }
 
@@ -56,6 +105,7 @@ export async function resetDbFromFile(file: File): Promise<void> {
     const existing = await dbPromise;
     await existing.close();
   }
+  markInitialized();
   dbPromise = createClient(file);
   await dbPromise;
 }
