@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { CreateCodebookForm } from "./CreateCodebookForm";
+import { AutoCodebookGenerator } from "./AutoCodebookGenerator";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 
 export default async function CodebooksPage({
@@ -54,6 +55,7 @@ export default async function CodebooksPage({
       </ul>
 
       <CreateCodebookForm gameId={gameId} />
+      <AutoCodebookGenerator gameId={gameId} />
     </main>
   );
 }

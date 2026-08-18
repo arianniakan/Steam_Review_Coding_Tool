@@ -12,7 +12,7 @@ interface CodeRow {
   parentCodeId: string | null;
 }
 
-const COLOR_PRESETS = [
+export const COLOR_PRESETS = [
   "#ef4444",
   "#f97316",
   "#eab308",
