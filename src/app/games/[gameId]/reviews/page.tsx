@@ -1,61 +1,73 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { PLAYTIME_TIERS } from "@/lib/playtimeTiers";
+import { SORT_OPTIONS, type ReviewSearchParams } from "@/lib/localDb/queries/reviewFilters";
 import {
-  buildReviewWhere,
-  buildReviewOrderBy,
-  SORT_OPTIONS,
-  type ReviewSearchParams,
-} from "@/lib/reviewFilters";
+  countReviews,
+  countCodedReviews,
+  listReviews,
+  groupReviewsByLanguage,
+  type ReviewWithTaggingCount,
+} from "@/lib/localDb/queries/reviews";
+import { listSavedSamplesForGame, type SavedSample } from "@/lib/localDb/queries/savedSamples";
+import { getGameById, type Game } from "@/lib/localDb/queries/games";
 import { SavedSamples } from "./SavedSamples";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
 import { ExpandableText } from "@/components/ExpandableText";
 
-const PAGE_SIZE = 25;
-
-type SearchParams = ReviewSearchParams;
-
-export default async function ReviewsPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ gameId: string }>;
-  searchParams: Promise<SearchParams>;
-}) {
-  const { gameId } = await params;
-  const sp = await searchParams;
-
-  const game = await prisma.game.findUnique({ where: { id: gameId } });
-  if (!game) notFound();
-
+export default function ReviewsPage() {
+  const { gameId } = useParams<{ gameId: string }>();
+  const searchParams = useSearchParams();
+  const sp: ReviewSearchParams = Object.fromEntries(searchParams.entries());
   const page = Math.max(Number(sp.page) || 1, 1);
-  const where = buildReviewWhere(gameId, sp);
-  const orderBy = buildReviewOrderBy(sp);
 
-  const [total, codedCount, reviews, savedSamples, languages] = await Promise.all([
-    prisma.review.count({ where }),
-    prisma.review.count({ where: { ...where, taggings: { some: {} } } }),
-    prisma.review.findMany({
-      where,
-      orderBy,
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
-      include: { _count: { select: { taggings: true } } },
-    }),
-    prisma.savedSample.findMany({ where: { gameId }, orderBy: { createdAt: "desc" } }),
-    prisma.review.groupBy({
-      by: ["language"],
-      where: { gameId },
-      _count: true,
-      orderBy: { _count: { language: "desc" } },
-    }),
-  ]);
+  const [game, setGame] = useState<Game | null | undefined>(undefined);
+  const [total, setTotal] = useState(0);
+  const [codedCount, setCodedCount] = useState(0);
+  const [reviews, setReviews] = useState<ReviewWithTaggingCount[]>([]);
+  const [savedSamples, setSavedSamples] = useState<SavedSample[]>([]);
+  const [languages, setLanguages] = useState<{ language: string; count: number }[]>([]);
+  const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      const g = await getGameById(gameId);
+      if (cancelled) return;
+      setGame(g);
+      if (!g) {
+        setLoading(false);
+        return;
+      }
+      const [t, c, r, s, l] = await Promise.all([
+        countReviews(gameId, sp),
+        countCodedReviews(gameId, sp),
+        listReviews(gameId, sp, page),
+        listSavedSamplesForGame(gameId),
+        groupReviewsByLanguage(gameId),
+      ]);
+      if (cancelled) return;
+      setTotal(t);
+      setCodedCount(c);
+      setReviews(r);
+      setSavedSamples(s);
+      setLanguages(l);
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameId, searchParams.toString()]);
+
+  const PAGE_SIZE = 25;
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
 
-  // Preserve current filters across pagination links.
   const filterParams = new URLSearchParams();
   if (sp.voted) filterParams.set("voted", sp.voted);
   if (sp.earlyAccess) filterParams.set("earlyAccess", sp.earlyAccess);
@@ -72,6 +84,21 @@ export default async function ReviewsPage({
     const params = new URLSearchParams(filterParams);
     params.set("page", String(p));
     return `?${params.toString()}`;
+  }
+
+  if (game === undefined || loading) {
+    return (
+      <main className="mx-auto max-w-3xl p-8">
+        <p className="text-sm text-gray-500">Loading…</p>
+      </main>
+    );
+  }
+  if (game === null) {
+    return (
+      <main className="mx-auto max-w-3xl p-8">
+        <p className="text-sm text-gray-500">Game not found.</p>
+      </main>
+    );
   }
 
   return (
@@ -121,7 +148,6 @@ export default async function ReviewsPage({
       </p>
 
       <form method="get" className="mt-6 grid grid-cols-2 gap-4 rounded-xl border border-gray-200 bg-white shadow-sm p-4 text-sm sm:grid-cols-4">
-        {/* Review type: recommended / purchase / early access */}
         <label className="flex flex-col gap-1">
           <span className="font-medium">Recommended</span>
           <select name="voted" defaultValue={sp.voted ?? ""} className="rounded border border-gray-300 px-2 py-1">
@@ -148,10 +174,8 @@ export default async function ReviewsPage({
           </select>
         </label>
 
-        {/* Row break so the next group starts on a fresh line */}
         <div className="col-span-2 sm:col-span-4" />
 
-        {/* Who & when: playtime / language / date range */}
         <label className="flex flex-col gap-1">
           <span className="font-medium">Playtime</span>
           <select name="playtime" defaultValue={sp.playtime ?? ""} className="rounded border border-gray-300 px-2 py-1">
@@ -170,7 +194,7 @@ export default async function ReviewsPage({
             <option value="">All</option>
             {languages.map((l) => (
               <option key={l.language} value={l.language}>
-                {l.language} ({l._count})
+                {l.language} ({l.count})
               </option>
             ))}
           </select>
@@ -196,7 +220,6 @@ export default async function ReviewsPage({
           />
         </label>
 
-        {/* Quality & sort: how to order results, and substance thresholds */}
         <label className="flex flex-col gap-1">
           <span className="font-medium">Sort by</span>
           <select name="sort" defaultValue={sp.sort ?? "newest"} className="rounded border border-gray-300 px-2 py-1">
@@ -256,7 +279,7 @@ export default async function ReviewsPage({
               <span>·</span>
               <span>{(r.playtimeForever / 60).toFixed(1)}h playtime</span>
               <span>·</span>
-              <span>{r.timestampCreated.toISOString().slice(0, 10)}</span>
+              <span>{new Date(r.timestampCreated).toISOString().slice(0, 10)}</span>
               {r.writtenDuringEarlyAccess && (
                 <>
                   <span>·</span>
@@ -274,8 +297,8 @@ export default async function ReviewsPage({
                 </>
               )}
               <span>·</span>
-              {r._count.taggings > 0 ? (
-                <span className="text-green-700">✓ Coded ({r._count.taggings})</span>
+              {r.taggingCount > 0 ? (
+                <span className="text-green-700">✓ Coded ({r.taggingCount})</span>
               ) : (
                 <span>Not yet coded</span>
               )}

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { createSavedSample, deleteSavedSample } from "@/lib/localDb/queries/savedSamples";
 
 interface SavedSample {
   id: string;
@@ -19,7 +19,6 @@ export function SavedSamples({
   currentQuery: string;
   initialSamples: SavedSample[];
 }) {
-  const router = useRouter();
   const [samples, setSamples] = useState(initialSamples);
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -31,17 +30,10 @@ export function SavedSamples({
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(`/api/games/${gameId}/saved-samples`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, query: currentQuery }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to save sample");
-      setSamples((prev) => [data, ...prev]);
+      const created = await createSavedSample(gameId, name, currentQuery);
+      setSamples((prev) => [created, ...prev]);
       setName("");
-      toast.success(`Saved filter preset "${data.name}"`);
-      router.refresh();
+      toast.success(`Saved filter preset "${created.name}"`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong";
       setError(message);
@@ -54,10 +46,9 @@ export function SavedSamples({
   async function handleDelete(id: string, name: string) {
     setDeletingId(id);
     try {
-      await fetch(`/api/saved-samples/${id}`, { method: "DELETE" });
+      await deleteSavedSample(id);
       setSamples((prev) => prev.filter((s) => s.id !== id));
       toast.success(`Deleted "${name}"`);
-      router.refresh();
     } finally {
       setDeletingId(null);
     }
