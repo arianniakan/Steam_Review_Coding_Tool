@@ -58,6 +58,17 @@ export async function fetchReviewPage(
   return res.json();
 }
 
+// Accepts a raw numeric App ID or a Steam store URL in any of its common
+// forms (with/without protocol, trailing slug, or query params) and pulls
+// out the App ID either way. Returns null if neither pattern matches.
+export function parseSteamAppId(input: string): number | null {
+  const trimmed = input.trim();
+  const urlMatch = trimmed.match(/\/app\/(\d+)/);
+  if (urlMatch) return Number(urlMatch[1]);
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  return null;
+}
+
 export async function fetchAppName(appId: number): Promise<string> {
   try {
     const res = await fetch(

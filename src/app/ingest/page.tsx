@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
+import { parseSteamAppId } from "@/lib/steam";
 
 interface IngestResult {
   gameId: string;
@@ -23,11 +24,18 @@ export default function IngestPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const parsedId = parseSteamAppId(appId);
+    if (parsedId === null) {
+      const message = "Couldn't find a Steam App ID in that — paste a store URL or the numeric ID";
+      setError(message);
+      toast.error(message);
+      return;
+    }
     setLoading(true);
     setError(null);
     setResult(null);
     try {
-      const res = await fetch(`/api/games/${appId}/ingest`, {
+      const res = await fetch(`/api/games/${parsedId}/ingest`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ maxPages }),
@@ -49,21 +57,18 @@ export default function IngestPage() {
     <main className="mx-auto max-w-xl p-8">
       <h1 className="text-2xl font-semibold">Ingest Steam Reviews</h1>
       <p className="mt-2 text-sm text-gray-500">
-        Paste a Steam App ID (find it in a store URL, e.g.{" "}
-        <code>store.steampowered.com/app/1091500</code> → App ID{" "}
-        <code>1091500</code>).
+        Paste a Steam store URL or just the App ID (e.g.{" "}
+        <code>store.steampowered.com/app/1091500</code> or <code>1091500</code>).
       </p>
 
       <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
         <label className="flex flex-col gap-1">
-          <span className="text-sm font-medium">Steam App ID</span>
+          <span className="text-sm font-medium">Steam store URL or App ID</span>
           <input
             required
-            inputMode="numeric"
-            pattern="[0-9]*"
             value={appId}
             onChange={(e) => setAppId(e.target.value)}
-            placeholder="1091500"
+            placeholder="store.steampowered.com/app/1091500 or 1091500"
             className="rounded border border-gray-300 px-3 py-2"
           />
         </label>
