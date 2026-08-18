@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { buildHighlightSegments } from "@/lib/highlightSpans";
+import { createTagging, deleteTagging } from "@/lib/localDb/queries/taggings";
+import { getDefaultResearcher, getAiCoder } from "@/lib/localDb/queries/coders";
 
 interface Code {
   id: string;
@@ -61,10 +62,34 @@ function getSelectionWithinContainer(container: HTMLElement): TextSelection | nu
   return { start, end: start + text.length, text };
 }
 
+function toTaggingView(t: {
+  id: string;
+  spanStart: number | null;
+  spanEnd: number | null;
+  memo: string | null;
+  aiConfidence: number | null;
+  aiRationale: string | null;
+  codeId: string;
+  codeLabel: string;
+  codeColor: string;
+  coderName: string;
+  coderKind: "HUMAN" | "AI";
+}): TaggingView {
+  return {
+    id: t.id,
+    spanStart: t.spanStart,
+    spanEnd: t.spanEnd,
+    memo: t.memo,
+    aiConfidence: t.aiConfidence,
+    aiRationale: t.aiRationale,
+    code: { id: t.codeId, label: t.codeLabel, color: t.codeColor },
+    coder: { name: t.coderName, kind: t.coderKind },
+  };
+}
+
 export function TagEditor({
   reviewId,
   reviewText,
-  codebookId,
   codes,
   initialTaggings,
 }: {
@@ -74,7 +99,6 @@ export function TagEditor({
   codes: Code[];
   initialTaggings: TaggingView[];
 }) {
-  const router = useRouter();
   const textRef = useRef<HTMLParagraphElement>(null);
   const [selection, setSelection] = useState<TextSelection | null>(null);
   const [codeId, setCodeId] = useState("");
@@ -103,25 +127,23 @@ export function TagEditor({
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch(`/api/reviews/${reviewId}/taggings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          codeId,
-          memo: memo || undefined,
-          spanStart: selection?.start,
-          spanEnd: selection?.end,
-        }),
+      const coder = await getDefaultResearcher();
+      const created = await createTagging({
+        reviewId,
+        codeId,
+        coderId: coder.id,
+        spanStart: selection?.start ?? null,
+        spanEnd: selection?.end ?? null,
+        memo: memo || null,
+        aiConfidence: null,
+        aiRationale: null,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to apply code");
-      setTaggings((prev) => [data, ...prev]);
+      setTaggings((prev) => [toTaggingView(created), ...prev]);
       setMemo("");
       setCodeId("");
       window.getSelection()?.removeAllRanges();
       setSelection(null);
-      toast.success(`Tagged "${data.code.label}"`);
-      router.refresh();
+      toast.success(`Tagged "${created.codeLabel}"`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong";
       setError(message);
@@ -135,12 +157,9 @@ export function TagEditor({
     setDeletingId(taggingId);
     setError(null);
     try {
-      const res = await fetch(`/api/taggings/${taggingId}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to delete tagging");
+      await deleteTagging(taggingId);
       setTaggings((prev) => prev.filter((t) => t.id !== taggingId));
       toast.success("Tagging deleted");
-      router.refresh();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong";
       setError(message);
@@ -157,7 +176,7 @@ export function TagEditor({
       const res = await fetch(`/api/reviews/${reviewId}/suggest-codes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ codebookId }),
+        body: JSON.stringify({ reviewText, codes }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to get AI suggestions");
@@ -193,24 +212,20 @@ export function TagEditor({
     setResolvingKey(key);
     setSuggestError(null);
     try {
-      const res = await fetch(`/api/reviews/${reviewId}/taggings`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          codeId: s.codeId,
-          spanStart: s.spanStart,
-          spanEnd: s.spanEnd,
-          source: "ai",
-          confidence: s.confidence,
-          rationale: s.rationale,
-        }),
+      const coder = await getAiCoder();
+      const created = await createTagging({
+        reviewId,
+        codeId: s.codeId,
+        coderId: coder.id,
+        spanStart: s.spanStart,
+        spanEnd: s.spanEnd,
+        memo: null,
+        aiConfidence: s.confidence,
+        aiRationale: s.rationale,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to accept suggestion");
-      setTaggings((prev) => [data, ...prev]);
+      setTaggings((prev) => [toTaggingView(created), ...prev]);
       setSuggestions((prev) => prev.filter((x) => suggestionKey(x) !== key));
-      toast.success(`Accepted AI suggestion "${data.code.label}"`);
-      router.refresh();
+      toast.success(`Accepted AI suggestion "${created.codeLabel}"`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong";
       setSuggestError(message);

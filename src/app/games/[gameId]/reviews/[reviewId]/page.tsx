@@ -1,42 +1,93 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { TagEditor } from "./TagEditor";
 import { CodebookSwitcher } from "./CodebookSwitcher";
 import { ReviewNav } from "./ReviewNav";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
-import { buildReviewWhere, buildReviewOrderBy, type ReviewSearchParams } from "@/lib/reviewFilters";
+import type { ReviewSearchParams } from "@/lib/localDb/queries/reviewFilters";
+import { getGameById, type Game } from "@/lib/localDb/queries/games";
+import { getReviewById, listReviewIdsOrdered, type Review } from "@/lib/localDb/queries/reviews";
+import { listCodebooksForGame, type Codebook } from "@/lib/localDb/queries/codebooks";
+import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
+import { listTaggingsForReview, type TaggingWithCode } from "@/lib/localDb/queries/taggings";
 
 type SearchParams = ReviewSearchParams & { codebookId?: string };
 
-export default async function ReviewDetailPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ gameId: string; reviewId: string }>;
-  searchParams: Promise<SearchParams>;
-}) {
-  const { gameId, reviewId } = await params;
-  const sp = await searchParams;
+export default function ReviewDetailPage() {
+  const { gameId, reviewId } = useParams<{ gameId: string; reviewId: string }>();
+  const searchParams = useSearchParams();
+  const sp: SearchParams = Object.fromEntries(searchParams.entries());
 
-  const game = await prisma.game.findUnique({ where: { id: gameId } });
-  if (!game) notFound();
+  const [loading, setLoading] = useState(true);
+  const [game, setGame] = useState<Game | null>(null);
+  const [review, setReview] = useState<Review | null>(null);
+  const [codebooks, setCodebooks] = useState<Codebook[]>([]);
+  const [codes, setCodes] = useState<Code[]>([]);
+  const [taggings, setTaggings] = useState<TaggingWithCode[]>([]);
+  const [orderedIds, setOrderedIds] = useState<string[]>([]);
 
-  const review = await prisma.review.findUnique({ where: { id: reviewId } });
-  if (!review || review.gameId !== gameId) notFound();
+  const activeCodebook = codebooks.find((cb) => cb.id === sp.codebookId) ?? codebooks[0];
 
-  const codebooks = await prisma.codebook.findMany({
-    where: { gameId },
-    orderBy: { createdAt: "desc" },
-  });
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      const [g, r, cbs] = await Promise.all([
+        getGameById(gameId),
+        getReviewById(reviewId),
+        listCodebooksForGame(gameId),
+      ]);
+      if (cancelled) return;
+      setGame(g);
+      setReview(r && r.gameId === gameId ? r : null);
+      setCodebooks(cbs);
+
+      if (cbs.length > 0) {
+        const active = cbs.find((cb) => cb.id === sp.codebookId) ?? cbs[0];
+        const [cds, tgs, ids] = await Promise.all([
+          listCodesForCodebook(active.id),
+          listTaggingsForReview(reviewId),
+          listReviewIdsOrdered(gameId, sp),
+        ]);
+        if (cancelled) return;
+        setCodes(cds);
+        setTaggings(tgs);
+        setOrderedIds(ids);
+      }
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameId, reviewId, searchParams.toString()]);
 
   const breadcrumbItems = [
     { label: "Games", href: "/games" },
-    { label: game.name, href: `/games/${gameId}/reviews` },
+    { label: game?.name ?? "…", href: `/games/${gameId}/reviews` },
     { label: "Reviews", href: `/games/${gameId}/reviews` },
     { label: "Review" },
   ];
+
+  if (loading) {
+    return (
+      <main className="mx-auto max-w-2xl p-8">
+        <p className="text-sm text-gray-500">Loading…</p>
+      </main>
+    );
+  }
+
+  if (!game || !review) {
+    return (
+      <main className="mx-auto max-w-2xl p-8">
+        <p className="text-sm text-gray-500">Review not found.</p>
+      </main>
+    );
+  }
 
   if (codebooks.length === 0) {
     return (
@@ -55,32 +106,12 @@ export default async function ReviewDetailPage({
     );
   }
 
-  const activeCodebook =
-    codebooks.find((cb) => cb.id === sp.codebookId) ?? codebooks[0];
-
-  const [codes, taggings, orderedReviews] = await Promise.all([
-    prisma.code.findMany({
-      where: { codebookId: activeCodebook.id },
-      orderBy: { createdAt: "asc" },
-    }),
-    prisma.tagging.findMany({
-      where: { reviewId },
-      include: { code: true, coder: true },
-      orderBy: { createdAt: "desc" },
-    }),
-    prisma.review.findMany({
-      where: buildReviewWhere(gameId, sp),
-      orderBy: buildReviewOrderBy(sp),
-      select: { id: true },
-    }),
-  ]);
-
-  const currentIndex = orderedReviews.findIndex((r) => r.id === reviewId);
+  const currentIndex = orderedIds.findIndex((id) => id === reviewId);
   const position = currentIndex === -1 ? 1 : currentIndex + 1;
-  const prevId = currentIndex > 0 ? orderedReviews[currentIndex - 1]?.id : undefined;
+  const prevId = currentIndex > 0 ? orderedIds[currentIndex - 1] : undefined;
   const nextId =
-    currentIndex !== -1 && currentIndex < orderedReviews.length - 1
-      ? orderedReviews[currentIndex + 1]?.id
+    currentIndex !== -1 && currentIndex < orderedIds.length - 1
+      ? orderedIds[currentIndex + 1]
       : undefined;
 
   const navQuery = new URLSearchParams();
@@ -112,7 +143,7 @@ export default async function ReviewDetailPage({
           gameId={gameId}
           query={navQuery.toString()}
           position={position}
-          total={orderedReviews.length}
+          total={orderedIds.length}
           prevId={prevId}
           nextId={nextId}
         />
@@ -125,14 +156,20 @@ export default async function ReviewDetailPage({
         <span>·</span>
         <span>{(review.playtimeForever / 60).toFixed(1)}h playtime</span>
         <span>·</span>
-        <span>{review.timestampCreated.toISOString().slice(0, 10)}</span>
+        <span>{new Date(review.timestampCreated).toISOString().slice(0, 10)}</span>
       </div>
 
       <TagEditor
         reviewId={reviewId}
         reviewText={review.text}
         codebookId={activeCodebook.id}
-        codes={codes}
+        codes={codes.map((c) => ({
+          id: c.id,
+          label: c.label,
+          description: c.description,
+          color: c.color,
+          parentCodeId: c.parentCodeId,
+        }))}
         initialTaggings={taggings.map((t) => ({
           id: t.id,
           spanStart: t.spanStart,
@@ -140,8 +177,8 @@ export default async function ReviewDetailPage({
           memo: t.memo,
           aiConfidence: t.aiConfidence,
           aiRationale: t.aiRationale,
-          code: { id: t.code.id, label: t.code.label, color: t.code.color },
-          coder: { name: t.coder.name, kind: t.coder.kind },
+          code: { id: t.codeId, label: t.codeLabel, color: t.codeColor },
+          coder: { name: t.coderName, kind: t.coderKind },
         }))}
       />
 
@@ -150,7 +187,7 @@ export default async function ReviewDetailPage({
           gameId={gameId}
           query={navQuery.toString()}
           position={position}
-          total={orderedReviews.length}
+          total={orderedIds.length}
           prevId={prevId}
           nextId={nextId}
         />

@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { openai, OPENAI_MODEL } from "@/lib/openai";
 
 interface RawSuggestion {
@@ -9,30 +8,30 @@ interface RawSuggestion {
   confidence: number;
 }
 
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ reviewId: string }> },
-) {
-  const { reviewId } = await context.params;
+interface IncomingCode {
+  id: string;
+  label: string;
+  description: string;
+  color: string;
+}
+
+// Stateless AI proxy — the local-first migration moved the database into
+// the browser, so this route no longer looks anything up itself. The
+// caller (which already has the review text and codebook loaded locally)
+// sends both directly; this route's only job is the OpenAI call.
+export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}) as Record<string, unknown>);
-  const codebookId = typeof body.codebookId === "string" ? body.codebookId : "";
+  const reviewText = typeof body.reviewText === "string" ? body.reviewText : "";
+  const codes = Array.isArray(body.codes) ? (body.codes as IncomingCode[]) : [];
 
-  if (!codebookId) {
-    return NextResponse.json({ error: "codebookId is required" }, { status: 400 });
+  if (!reviewText) {
+    return NextResponse.json({ error: "reviewText is required" }, { status: 400 });
   }
-
-  const [review, codes] = await Promise.all([
-    prisma.review.findUnique({ where: { id: reviewId } }),
-    prisma.code.findMany({ where: { codebookId }, orderBy: { createdAt: "asc" } }),
-  ]);
-  if (!review) return NextResponse.json({ error: "Review not found" }, { status: 404 });
   if (codes.length === 0) {
     return NextResponse.json({ error: "This codebook has no codes yet" }, { status: 400 });
   }
 
-  const codebookDescription = codes
-    .map((c) => `- ${c.label}: ${c.description}`)
-    .join("\n");
+  const codebookDescription = codes.map((c) => `- ${c.label}: ${c.description}`).join("\n");
 
   let raw: { suggestions: RawSuggestion[] };
   try {
@@ -53,7 +52,7 @@ export async function POST(
         },
         {
           role: "user",
-          content: `Codebook:\n${codebookDescription}\n\nReview:\n${review.text}`,
+          content: `Codebook:\n${codebookDescription}\n\nReview:\n${reviewText}`,
         },
       ],
       response_format: {
@@ -107,7 +106,7 @@ export async function POST(
       const code = codeByLabel.get(s.codeLabel);
       if (!code) return null; // shouldn't happen given the enum constraint, but be defensive
 
-      const idx = review.text.indexOf(s.spanText);
+      const idx = reviewText.indexOf(s.spanText);
       const spanStart = idx >= 0 ? idx : null;
       const spanEnd = idx >= 0 ? idx + s.spanText.length : null;
 
