@@ -11,6 +11,7 @@ import { getGameById, type Game } from "@/lib/localDb/queries/games";
 import { listCodebooksForGame, type CodebookWithCodeCount } from "@/lib/localDb/queries/codebooks";
 import { groupReviewsByLanguage } from "@/lib/localDb/queries/reviews";
 import { listSavedSamplesForGame, type SavedSample } from "@/lib/localDb/queries/savedSamples";
+import { exportCodebookCsv } from "@/lib/localDb/csvExport";
 
 export default function CodebooksPage() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -76,16 +77,39 @@ export default function CodebooksPage() {
 
       <ul className="mt-6 flex flex-col gap-2">
         {codebooks.map((cb) => (
-          <li key={cb.id}>
-            <Link
-              href={`/games/${gameId}/codebooks/${cb.id}`}
-              className="flex items-center justify-between rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-2 text-sm hover:border-gray-400"
-            >
-              <span>{cb.name}</span>
-              <span className="text-gray-500">
+          <li
+            key={cb.id}
+            className="rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-2 text-sm hover:border-gray-400"
+          >
+            <div className="flex items-center justify-between gap-4">
+              <Link href={`/games/${gameId}/codebooks/${cb.id}`} className="min-w-0 flex-1">
+                <span>{cb.name}</span>
+              </Link>
+              <span className="shrink-0 text-gray-500">
                 {cb.codeCount} code{cb.codeCount === 1 ? "" : "s"}
               </span>
-            </Link>
+            </div>
+            <div className="mt-1.5 flex gap-4 text-xs">
+              <Link
+                href={`/games/${gameId}/codebooks/${cb.id}`}
+                className="text-gray-500 underline hover:text-gray-900"
+              >
+                Manage codes
+              </Link>
+              <Link
+                href={`/games/${gameId}/codebooks/${cb.id}/analytics`}
+                className="text-gray-500 underline hover:text-gray-900"
+              >
+                Analytics
+              </Link>
+              <button
+                type="button"
+                onClick={() => exportCodebookCsv(cb.id, game.name, cb.name)}
+                className="text-gray-500 underline hover:text-gray-900"
+              >
+                Export CSV
+              </button>
+            </div>
           </li>
         ))}
         {codebooks.length === 0 && (
