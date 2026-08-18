@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { fetchAppName, fetchReviewPage, type SteamReview } from "@/lib/steam";
+import { fetchAppDetails, fetchReviewPage, type SteamReview } from "@/lib/steam";
 
 const MAX_PAGES_CAP = 30;
 const DEFAULT_MAX_PAGES = 10;
@@ -33,11 +33,19 @@ export async function POST(
     MAX_PAGES_CAP,
   );
 
-  const gameName = await fetchAppName(appId);
+  const details = await fetchAppDetails(appId);
+  const gameData = {
+    name: details.name,
+    headerImage: details.headerImage,
+    shortDescription: details.shortDescription,
+    genres: details.genres,
+    releaseDate: details.releaseDate,
+    developers: details.developers,
+  };
   const game = await prisma.game.upsert({
     where: { steamAppId: appId },
-    update: { name: gameName },
-    create: { steamAppId: appId, name: gameName },
+    update: gameData,
+    create: { steamAppId: appId, ...gameData },
   });
 
   const allReviews: SteamReview[] = [];

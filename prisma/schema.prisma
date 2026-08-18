@@ -16,6 +16,15 @@ model Game {
   name       String
   createdAt  DateTime @default(now())
 
+  // Steam store metadata — fetched once at ingest time (same appdetails
+  // call already made for the name) rather than live on every page load,
+  // since that endpoint is a bit flaky under repeated calls.
+  headerImage      String?
+  shortDescription String?
+  genres           String[]
+  releaseDate      String? // free text — Steam's own format varies ("Coming soon", "Q4 2025", a real date, ...)
+  developers       String[]
+
   reviews      Review[]
   codebooks    Codebook[]
   events       Event[]

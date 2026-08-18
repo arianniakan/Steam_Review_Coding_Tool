@@ -25,10 +25,18 @@ export default async function GamesPage() {
           <li key={g.id}>
             <Link
               href={`/games/${g.id}/reviews`}
-              className="flex items-center justify-between rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-3 text-sm hover:border-gray-400"
+              className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-3 text-sm hover:border-gray-400"
             >
-              <span className="font-medium">{g.name}</span>
-              <span className="text-gray-500">
+              {g.headerImage && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={g.headerImage}
+                  alt={g.name}
+                  className="h-10 w-20 shrink-0 rounded object-cover"
+                />
+              )}
+              <span className="flex-1 font-medium">{g.name}</span>
+              <span className="shrink-0 text-gray-500">
                 {g._count.reviews} review{g._count.reviews === 1 ? "" : "s"} ·{" "}
                 {g._count.codebooks} codebook{g._count.codebooks === 1 ? "" : "s"}
               </span>

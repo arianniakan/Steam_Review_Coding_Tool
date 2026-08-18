@@ -84,13 +84,37 @@ export default async function ReviewsPage({
       <div className="mt-2">
         <BackButton href="/games" label="Games" />
       </div>
-      <div className="mt-2 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{game.name}</h1>
-        <Link href={`/games/${gameId}/codebooks`} className="text-sm underline">
-          Codebooks →
-        </Link>
+
+      <div className="mt-2 flex gap-4 rounded-xl border border-gray-200 bg-white shadow-sm p-4">
+        {game.headerImage && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={game.headerImage}
+            alt={game.name}
+            className="h-24 w-auto shrink-0 rounded-lg object-cover"
+          />
+        )}
+        <div className="min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <h1 className="text-2xl font-semibold">{game.name}</h1>
+            <Link href={`/games/${gameId}/codebooks`} className="shrink-0 text-sm underline">
+              Codebooks →
+            </Link>
+          </div>
+          {(game.genres.length > 0 || game.releaseDate || game.developers.length > 0) && (
+            <p className="mt-1 text-xs text-gray-500">
+              {[game.genres.join(", "), game.releaseDate, game.developers.join(", ")]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          )}
+          {game.shortDescription && (
+            <p className="mt-2 line-clamp-2 text-sm text-gray-600">{game.shortDescription}</p>
+          )}
+        </div>
       </div>
-      <p className="mt-1 text-sm text-gray-500">
+
+      <p className="mt-2 text-sm text-gray-500">
         {total} review{total === 1 ? "" : "s"} matching current filters ·{" "}
         {codedCount} of {total} coded
       </p>

@@ -69,19 +69,45 @@ export function parseSteamAppId(input: string): number | null {
   return null;
 }
 
-export async function fetchAppName(appId: number): Promise<string> {
+export interface SteamAppDetails {
+  name: string;
+  headerImage: string | null;
+  shortDescription: string | null;
+  genres: string[];
+  releaseDate: string | null;
+  developers: string[];
+}
+
+export async function fetchAppDetails(appId: number): Promise<SteamAppDetails> {
+  const fallback: SteamAppDetails = {
+    name: `App ${appId}`,
+    headerImage: null,
+    shortDescription: null,
+    genres: [],
+    releaseDate: null,
+    developers: [],
+  };
   try {
     const res = await fetch(
       `https://store.steampowered.com/api/appdetails?appids=${appId}`,
     );
-    if (!res.ok) return `App ${appId}`;
+    if (!res.ok) return fallback;
     const data = await res.json();
     const entry = data?.[String(appId)];
-    if (entry?.success && entry.data?.name) {
-      return entry.data.name as string;
-    }
+    if (!entry?.success || !entry.data) return fallback;
+    const d = entry.data;
+    return {
+      name: typeof d.name === "string" ? d.name : fallback.name,
+      headerImage: typeof d.header_image === "string" ? d.header_image : null,
+      shortDescription: typeof d.short_description === "string" ? d.short_description : null,
+      genres: Array.isArray(d.genres)
+        ? d.genres.map((g: { description?: string }) => g.description).filter(Boolean)
+        : [],
+      releaseDate: typeof d.release_date?.date === "string" ? d.release_date.date : null,
+      developers: Array.isArray(d.developers) ? d.developers.filter((x: unknown) => typeof x === "string") : [],
+    };
   } catch {
     // appdetails is occasionally flaky/rate-limited — fall back below
+    return fallback;
   }
-  return `App ${appId}`;
 }
