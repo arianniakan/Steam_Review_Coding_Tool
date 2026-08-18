@@ -7,6 +7,13 @@ export interface SteamReview {
   author: {
     steamid: string;
     playtime_forever: number;
+    // Not present on every review (added to Steam's API after older
+    // reviews were written) — treat as optional.
+    playtime_at_review?: number;
+    playtime_last_two_weeks?: number;
+    num_games_owned?: number;
+    num_reviews?: number;
+    last_played?: number;
   };
   language: string;
   review: string;

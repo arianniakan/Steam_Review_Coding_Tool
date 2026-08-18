@@ -71,18 +71,46 @@ export async function POST(
     receivedForFree: r.received_for_free,
     commentCount: r.comment_count,
     language: r.language,
+    textLength: r.review.length,
+    playtimeAtReview: r.author.playtime_at_review ?? null,
+    playtimeLastTwoWeeks: r.author.playtime_last_two_weeks ?? null,
+    authorNumGamesOwned: r.author.num_games_owned ?? null,
+    authorNumReviews: r.author.num_reviews ?? null,
+    authorLastPlayed: r.author.last_played ? new Date(r.author.last_played * 1000) : null,
   }));
 
-  const result = rows.length
-    ? await prisma.review.createMany({ data: rows, skipDuplicates: true })
-    : { count: 0 };
+  // Upsert (not createMany+skipDuplicates) so re-running ingest on an
+  // already-ingested game backfills newly-added fields on existing rows
+  // instead of silently no-opping on the duplicate steamReviewId.
+  const existingCount = rows.length
+    ? await prisma.review.count({
+        where: { gameId: game.id, steamReviewId: { in: rows.map((r) => r.steamReviewId) } },
+      })
+    : 0;
+
+  const UPSERT_BATCH_SIZE = 50;
+  for (let i = 0; i < rows.length; i += UPSERT_BATCH_SIZE) {
+    const batch = rows.slice(i, i + UPSERT_BATCH_SIZE);
+    await Promise.all(
+      batch.map((row) =>
+        prisma.review.upsert({
+          where: { steamReviewId: row.steamReviewId },
+          create: row,
+          update: row,
+        }),
+      ),
+    );
+  }
+
+  const insertedCount = rows.length - existingCount;
 
   return NextResponse.json({
     gameId: game.id,
     gameName: game.name,
     steamAppId: appId,
     fetchedFromSteam: allReviews.length,
-    ingestedCount: result.count,
+    ingestedCount: insertedCount,
+    updatedCount: existingCount,
     pagesFetched,
     hasMore: pagesFetched === maxPages,
     totalReviewsOnSteam,

@@ -5,7 +5,7 @@ import { TagEditor } from "./TagEditor";
 import { CodebookSwitcher } from "./CodebookSwitcher";
 import { ReviewNav } from "./ReviewNav";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
-import { buildReviewWhere, type ReviewSearchParams } from "@/lib/reviewFilters";
+import { buildReviewWhere, buildReviewOrderBy, type ReviewSearchParams } from "@/lib/reviewFilters";
 
 type SearchParams = ReviewSearchParams & { codebookId?: string };
 
@@ -66,7 +66,7 @@ export default async function ReviewDetailPage({
     }),
     prisma.review.findMany({
       where: buildReviewWhere(gameId, sp),
-      orderBy: { timestampCreated: "desc" },
+      orderBy: buildReviewOrderBy(sp),
       select: { id: true },
     }),
   ]);
@@ -85,6 +85,11 @@ export default async function ReviewDetailPage({
   if (sp.playtime) navQuery.set("playtime", sp.playtime);
   if (sp.from) navQuery.set("from", sp.from);
   if (sp.to) navQuery.set("to", sp.to);
+  if (sp.purchase) navQuery.set("purchase", sp.purchase);
+  if (sp.language) navQuery.set("language", sp.language);
+  if (sp.minVotes) navQuery.set("minVotes", sp.minVotes);
+  if (sp.minLength) navQuery.set("minLength", sp.minLength);
+  if (sp.sort) navQuery.set("sort", sp.sort);
   if (sp.codebookId) navQuery.set("codebookId", sp.codebookId);
 
   return (

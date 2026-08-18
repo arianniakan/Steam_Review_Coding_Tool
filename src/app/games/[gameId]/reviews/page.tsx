@@ -2,7 +2,12 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { PLAYTIME_TIERS } from "@/lib/playtimeTiers";
-import { buildReviewWhere, type ReviewSearchParams } from "@/lib/reviewFilters";
+import {
+  buildReviewWhere,
+  buildReviewOrderBy,
+  SORT_OPTIONS,
+  type ReviewSearchParams,
+} from "@/lib/reviewFilters";
 import { SavedSamples } from "./SavedSamples";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 
@@ -25,18 +30,25 @@ export default async function ReviewsPage({
 
   const page = Math.max(Number(sp.page) || 1, 1);
   const where = buildReviewWhere(gameId, sp);
+  const orderBy = buildReviewOrderBy(sp);
 
-  const [total, codedCount, reviews, savedSamples] = await Promise.all([
+  const [total, codedCount, reviews, savedSamples, languages] = await Promise.all([
     prisma.review.count({ where }),
     prisma.review.count({ where: { ...where, taggings: { some: {} } } }),
     prisma.review.findMany({
       where,
-      orderBy: { timestampCreated: "desc" },
+      orderBy,
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       include: { _count: { select: { taggings: true } } },
     }),
     prisma.savedSample.findMany({ where: { gameId }, orderBy: { createdAt: "desc" } }),
+    prisma.review.groupBy({
+      by: ["language"],
+      where: { gameId },
+      _count: true,
+      orderBy: { _count: { language: "desc" } },
+    }),
   ]);
 
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
@@ -48,6 +60,11 @@ export default async function ReviewsPage({
   if (sp.playtime) filterParams.set("playtime", sp.playtime);
   if (sp.from) filterParams.set("from", sp.from);
   if (sp.to) filterParams.set("to", sp.to);
+  if (sp.purchase) filterParams.set("purchase", sp.purchase);
+  if (sp.language) filterParams.set("language", sp.language);
+  if (sp.minVotes) filterParams.set("minVotes", sp.minVotes);
+  if (sp.minLength) filterParams.set("minLength", sp.minLength);
+  if (sp.sort) filterParams.set("sort", sp.sort);
 
   function pageHref(p: number) {
     const params = new URLSearchParams(filterParams);
@@ -115,6 +132,63 @@ export default async function ReviewsPage({
           </label>
         </div>
 
+        <div className="col-span-2 border-t border-gray-100 pt-4 sm:col-span-4" />
+
+        <label className="flex flex-col gap-1">
+          <span className="font-medium">Sort by</span>
+          <select name="sort" defaultValue={sp.sort ?? "newest"} className="rounded border border-gray-300 px-2 py-1">
+            {SORT_OPTIONS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="font-medium">Purchase</span>
+          <select name="purchase" defaultValue={sp.purchase ?? ""} className="rounded border border-gray-300 px-2 py-1">
+            <option value="">All</option>
+            <option value="verified">Verified purchase only</option>
+            <option value="free">Received for free only</option>
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="font-medium">Language</span>
+          <select name="language" defaultValue={sp.language ?? ""} className="rounded border border-gray-300 px-2 py-1">
+            <option value="">All</option>
+            {languages.map((l) => (
+              <option key={l.language} value={l.language}>
+                {l.language} ({l._count})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="flex gap-2">
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="font-medium">Min. helpful votes</span>
+            <input
+              type="number"
+              min={0}
+              name="minVotes"
+              defaultValue={sp.minVotes ?? ""}
+              className="rounded border border-gray-300 px-2 py-1"
+            />
+          </label>
+          <label className="flex flex-1 flex-col gap-1">
+            <span className="font-medium">Min. length (chars)</span>
+            <input
+              type="number"
+              min={0}
+              name="minLength"
+              defaultValue={sp.minLength ?? ""}
+              className="rounded border border-gray-300 px-2 py-1"
+            />
+          </label>
+        </div>
+
         <div className="col-span-2 flex items-end gap-2 sm:col-span-4">
           <button type="submit" className="rounded-lg bg-black px-4 py-1.5 text-white">
             Apply filters
@@ -146,6 +220,16 @@ export default async function ReviewsPage({
                 <>
                   <span>·</span>
                   <span>Early access</span>
+                </>
+              )}
+              <span>·</span>
+              <span title="Steam quality/helpfulness score">
+                {r.votesUp} helpful ({(r.weightedVoteScore * 100).toFixed(0)}% score)
+              </span>
+              {r.steamPurchase && (
+                <>
+                  <span>·</span>
+                  <span>Verified purchase</span>
                 </>
               )}
               <span>·</span>

@@ -9,6 +9,7 @@ interface IngestResult {
   steamAppId: number;
   fetchedFromSteam: number;
   ingestedCount: number;
+  updatedCount: number;
   pagesFetched: number;
   hasMore: boolean;
 }
@@ -97,8 +98,8 @@ export default function IngestPage() {
           <p className="font-medium">{result.gameName}</p>
           <p className="mt-1 text-gray-600">
             Fetched {result.fetchedFromSteam} reviews from Steam across{" "}
-            {result.pagesFetched} page(s); inserted {result.ingestedCount} new
-            row(s) (duplicates skipped).
+            {result.pagesFetched} page(s); {result.ingestedCount} new,{" "}
+            {result.updatedCount} already-ingested row(s) refreshed.
           </p>
           {result.hasMore && (
             <p className="mt-2 text-amber-600">

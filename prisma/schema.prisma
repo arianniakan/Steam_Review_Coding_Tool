@@ -53,7 +53,19 @@ model Review {
   receivedForFree          Boolean
   commentCount             Int
   language                 String
-  createdAt                DateTime @default(now())
+  textLength               Int      @default(0)
+
+  // Playtime/experience the author had at the moment they wrote the review —
+  // distinct from playtimeForever, which keeps climbing after the fact.
+  // Nullable because older ingests (or edge cases in Steam's response) may
+  // not have them.
+  playtimeAtReview     Int?
+  playtimeLastTwoWeeks Int?
+  authorNumGamesOwned  Int?
+  authorNumReviews     Int?
+  authorLastPlayed     DateTime?
+
+  createdAt DateTime @default(now())
 
   taggings Tagging[]
 
