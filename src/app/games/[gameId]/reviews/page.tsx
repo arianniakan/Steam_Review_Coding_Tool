@@ -14,10 +14,13 @@ import {
 } from "@/lib/localDb/queries/reviews";
 import { listSavedSamplesForGame, type SavedSample } from "@/lib/localDb/queries/savedSamples";
 import { getGameById, type Game } from "@/lib/localDb/queries/games";
+import { listCodebooksForGame, type Codebook } from "@/lib/localDb/queries/codebooks";
+import { resolveActiveCodebookId } from "@/lib/activeCodebook";
 import { SavedSamples } from "./SavedSamples";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
 import { ExpandableText } from "@/components/ExpandableText";
+import { CodebookToolbar } from "@/components/CodebookToolbar";
 
 export default function ReviewsPage() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -31,6 +34,8 @@ export default function ReviewsPage() {
   const [reviews, setReviews] = useState<ReviewWithTaggingCount[]>([]);
   const [savedSamples, setSavedSamples] = useState<SavedSample[]>([]);
   const [languages, setLanguages] = useState<{ language: string; count: number }[]>([]);
+  const [codebooks, setCodebooks] = useState<Codebook[]>([]);
+  const [activeCodebookId, setActiveCodebookId] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -44,10 +49,16 @@ export default function ReviewsPage() {
         setLoading(false);
         return;
       }
+      const cbs = await listCodebooksForGame(gameId);
+      if (cancelled) return;
+      const active = resolveActiveCodebookId(gameId, cbs, searchParams.get("codebookId"));
+      setCodebooks(cbs);
+      setActiveCodebookId(active);
+
       const [t, c, r, s, l] = await Promise.all([
         countReviews(gameId, sp),
-        countCodedReviews(gameId, sp),
-        listReviews(gameId, sp, page),
+        countCodedReviews(gameId, sp, active),
+        listReviews(gameId, sp, page, active),
         listSavedSamplesForGame(gameId),
         groupReviewsByLanguage(gameId),
       ]);
@@ -85,6 +96,9 @@ export default function ReviewsPage() {
     params.set("page", String(p));
     return `?${params.toString()}`;
   }
+
+  const tagQuery = new URLSearchParams(filterParams);
+  if (activeCodebookId) tagQuery.set("codebookId", activeCodebookId);
 
   if (game === undefined || loading) {
     return (
@@ -126,7 +140,7 @@ export default function ReviewsPage() {
           <div className="flex items-center justify-between gap-2">
             <h1 className="text-2xl font-semibold">{game.name}</h1>
             <Link href={`/games/${gameId}/codebooks`} className="shrink-0 text-sm underline">
-              Codebooks →
+              All codebooks →
             </Link>
           </div>
           {(game.genres.length > 0 || game.releaseDate || game.developers.length > 0) && (
@@ -141,6 +155,13 @@ export default function ReviewsPage() {
           )}
         </div>
       </div>
+
+      <CodebookToolbar
+        gameId={gameId}
+        gameName={game.name}
+        codebooks={codebooks}
+        activeCodebookId={activeCodebookId}
+      />
 
       <p className="mt-2 text-sm text-gray-500">
         {total} review{total === 1 ? "" : "s"} matching current filters ·{" "}
@@ -305,7 +326,7 @@ export default function ReviewsPage() {
             </div>
             <p className="mt-2 whitespace-pre-wrap">{r.text}</p>
             <Link
-              href={`/games/${gameId}/reviews/${r.id}?${filterParams.toString()}`}
+              href={`/games/${gameId}/reviews/${r.id}?${tagQuery.toString()}`}
               className="mt-2 inline-block text-xs underline"
             >
               Tag this review →

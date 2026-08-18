@@ -67,15 +67,22 @@ export async function deleteTagging(id: string): Promise<void> {
   await db.query(`DELETE FROM "Tagging" WHERE "id" = $1`, [id]);
 }
 
-export async function listTaggingsForReview(reviewId: string): Promise<TaggingWithCode[]> {
+// Scoped to one codebook — a review can technically carry taggings from
+// multiple codebooks (nothing enforces exclusivity at the data level), but
+// showing only the active codebook's taggings keeps what's on screen
+// consistent with which codes are offered for new tagging.
+export async function listTaggingsForReview(
+  reviewId: string,
+  codebookId: string,
+): Promise<TaggingWithCode[]> {
   const db = await getDb();
   const result = await db.query<TaggingWithCode>(
     `SELECT ${TAGGING_JOIN_SELECT} FROM "Tagging" t
      JOIN "Code" c ON c."id" = t."codeId"
      JOIN "Coder" co ON co."id" = t."coderId"
-     WHERE t."reviewId" = $1
+     WHERE t."reviewId" = $1 AND c."codebookId" = $2
      ORDER BY t."createdAt" DESC`,
-    [reviewId],
+    [reviewId, codebookId],
   );
   return result.rows;
 }

@@ -4,16 +4,17 @@ import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { TagEditor } from "./TagEditor";
-import { CodebookSwitcher } from "./CodebookSwitcher";
 import { ReviewNav } from "./ReviewNav";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
+import { CodebookToolbar } from "@/components/CodebookToolbar";
 import type { ReviewSearchParams } from "@/lib/localDb/queries/reviewFilters";
 import { getGameById, type Game } from "@/lib/localDb/queries/games";
 import { getReviewById, listReviewIdsOrdered, type Review } from "@/lib/localDb/queries/reviews";
 import { listCodebooksForGame, type Codebook } from "@/lib/localDb/queries/codebooks";
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { listTaggingsForReview, type TaggingWithCode } from "@/lib/localDb/queries/taggings";
+import { resolveActiveCodebookId } from "@/lib/activeCodebook";
 
 type SearchParams = ReviewSearchParams & { codebookId?: string };
 
@@ -26,11 +27,10 @@ export default function ReviewDetailPage() {
   const [game, setGame] = useState<Game | null>(null);
   const [review, setReview] = useState<Review | null>(null);
   const [codebooks, setCodebooks] = useState<Codebook[]>([]);
+  const [activeCodebookId, setActiveCodebookId] = useState<string | undefined>(undefined);
   const [codes, setCodes] = useState<Code[]>([]);
   const [taggings, setTaggings] = useState<TaggingWithCode[]>([]);
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
-
-  const activeCodebook = codebooks.find((cb) => cb.id === sp.codebookId) ?? codebooks[0];
 
   useEffect(() => {
     let cancelled = false;
@@ -47,10 +47,11 @@ export default function ReviewDetailPage() {
       setCodebooks(cbs);
 
       if (cbs.length > 0) {
-        const active = cbs.find((cb) => cb.id === sp.codebookId) ?? cbs[0];
+        const active = resolveActiveCodebookId(gameId, cbs, searchParams.get("codebookId"))!;
+        setActiveCodebookId(active);
         const [cds, tgs, ids] = await Promise.all([
-          listCodesForCodebook(active.id),
-          listTaggingsForReview(reviewId),
+          listCodesForCodebook(active),
+          listTaggingsForReview(reviewId, active),
           listReviewIdsOrdered(gameId, sp),
         ]);
         if (cancelled) return;
@@ -125,18 +126,22 @@ export default function ReviewDetailPage() {
   if (sp.minVotes) navQuery.set("minVotes", sp.minVotes);
   if (sp.minLength) navQuery.set("minLength", sp.minLength);
   if (sp.sort) navQuery.set("sort", sp.sort);
-  if (sp.codebookId) navQuery.set("codebookId", sp.codebookId);
+  if (activeCodebookId) navQuery.set("codebookId", activeCodebookId);
 
   return (
     <main className="mx-auto max-w-2xl p-8">
       <Breadcrumbs items={breadcrumbItems} />
 
-      <div className="mt-2 flex items-center justify-between">
+      <div className="mt-2">
         <BackButton href={`/games/${gameId}/reviews`} label="Reviews" />
-        {codebooks.length > 1 && (
-          <CodebookSwitcher codebooks={codebooks} activeCodebookId={activeCodebook.id} />
-        )}
       </div>
+
+      <CodebookToolbar
+        gameId={gameId}
+        gameName={game.name}
+        codebooks={codebooks}
+        activeCodebookId={activeCodebookId}
+      />
 
       <div className="mt-4">
         <ReviewNav
@@ -162,7 +167,7 @@ export default function ReviewDetailPage() {
       <TagEditor
         reviewId={reviewId}
         reviewText={review.text}
-        codebookId={activeCodebook.id}
+        codebookId={activeCodebookId!}
         codes={codes.map((c) => ({
           id: c.id,
           label: c.label,

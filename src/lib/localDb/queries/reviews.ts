@@ -43,13 +43,28 @@ export async function countReviews(gameId: string, sp: ReviewSearchParams): Prom
   return result.rows[0]?.count ?? 0;
 }
 
-export async function countCodedReviews(gameId: string, sp: ReviewSearchParams): Promise<number> {
+// codebookId scopes both the "coded" count and the per-row tagging count to
+// the active codebook, so the summary line and badges agree with what
+// TagEditor actually shows for a review (see listTaggingsForReview). Left
+// optional — when there's no codebook yet for the game, counts are 0 either
+// way, so falling back to unscoped is harmless.
+export async function countCodedReviews(
+  gameId: string,
+  sp: ReviewSearchParams,
+  codebookId?: string,
+): Promise<number> {
   const db = await getDb();
   const { sql, params } = buildReviewWhereSql(gameId, sp);
+  const codebookFilter = codebookId
+    ? `AND c."codebookId" = $${params.length + 1}`
+    : "";
   const result = await db.query<{ count: number }>(
     `SELECT COUNT(*)::int AS count FROM "Review" r
-     WHERE ${sql} AND EXISTS (SELECT 1 FROM "Tagging" t WHERE t."reviewId" = r."id")`,
-    params,
+     WHERE ${sql} AND EXISTS (
+       SELECT 1 FROM "Tagging" t JOIN "Code" c ON c."id" = t."codeId"
+       WHERE t."reviewId" = r."id" ${codebookFilter}
+     )`,
+    codebookId ? [...params, codebookId] : params,
   );
   return result.rows[0]?.count ?? 0;
 }
@@ -58,19 +73,24 @@ export async function listReviews(
   gameId: string,
   sp: ReviewSearchParams,
   page: number,
+  codebookId?: string,
 ): Promise<ReviewWithTaggingCount[]> {
   const db = await getDb();
   const { sql, params } = buildReviewWhereSql(gameId, sp);
   const orderBy = buildReviewOrderBySql(sp);
   const offset = Math.max(page - 1, 0) * PAGE_SIZE;
+  const codebookFilter = codebookId
+    ? `AND c."codebookId" = $${params.length + 1}`
+    : "";
   const result = await db.query<ReviewWithTaggingCount>(
     `SELECT r.*,
-       (SELECT COUNT(*)::int FROM "Tagging" t WHERE t."reviewId" = r."id") AS "taggingCount"
+       (SELECT COUNT(*)::int FROM "Tagging" t JOIN "Code" c ON c."id" = t."codeId"
+        WHERE t."reviewId" = r."id" ${codebookFilter}) AS "taggingCount"
      FROM "Review" r
      WHERE ${sql}
      ORDER BY ${orderBy}
      LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
-    params,
+    codebookId ? [...params, codebookId] : params,
   );
   return result.rows;
 }
