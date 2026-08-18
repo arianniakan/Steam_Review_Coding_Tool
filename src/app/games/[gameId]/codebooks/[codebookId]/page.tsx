@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { CodeManager } from "./CodeManager";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { BackButton } from "@/components/BackButton";
 
 export default async function CodebookDetailPage({
   params,
@@ -28,6 +29,9 @@ export default async function CodebookDetailPage({
           { label: codebook.name },
         ]}
       />
+      <div className="mt-2">
+        <BackButton href={`/games/${gameId}/codebooks`} label="Codebooks" />
+      </div>
       <div className="mt-2 flex items-center justify-between">
         <div>
           <p className="text-sm text-gray-500">{codebook.game.name}</p>

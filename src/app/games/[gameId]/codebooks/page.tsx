@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { CreateCodebookForm } from "./CreateCodebookForm";
 import { AutoCodebookGenerator } from "./AutoCodebookGenerator";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { BackButton } from "@/components/BackButton";
 
 export default async function CodebooksPage({
   params,
@@ -38,6 +39,9 @@ export default async function CodebooksPage({
           { label: game.name, href: `/games/${gameId}/reviews` },
         ]}
       />
+      <div className="mt-2">
+        <BackButton href={`/games/${gameId}/reviews`} label={game.name} />
+      </div>
       <h1 className="mt-2 text-2xl font-semibold">{game.name} — Codebooks</h1>
       <p className="mt-1 text-sm text-gray-500">
         A codebook is a named set of codes for tagging review segments. Version

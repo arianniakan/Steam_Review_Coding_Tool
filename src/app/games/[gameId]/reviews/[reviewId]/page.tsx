@@ -5,6 +5,7 @@ import { TagEditor } from "./TagEditor";
 import { CodebookSwitcher } from "./CodebookSwitcher";
 import { ReviewNav } from "./ReviewNav";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { BackButton } from "@/components/BackButton";
 import { buildReviewWhere, buildReviewOrderBy, type ReviewSearchParams } from "@/lib/reviewFilters";
 
 type SearchParams = ReviewSearchParams & { codebookId?: string };
@@ -41,6 +42,9 @@ export default async function ReviewDetailPage({
     return (
       <main className="mx-auto max-w-2xl p-8">
         <Breadcrumbs items={breadcrumbItems} />
+        <div className="mt-2">
+          <BackButton href={`/games/${gameId}/reviews`} label="Reviews" />
+        </div>
         <p className="mt-4 text-sm text-gray-500">
           No codebooks exist for this game yet.{" "}
           <Link href={`/games/${gameId}/codebooks`} className="underline">
@@ -96,6 +100,13 @@ export default async function ReviewDetailPage({
     <main className="mx-auto max-w-2xl p-8">
       <Breadcrumbs items={breadcrumbItems} />
 
+      <div className="mt-2 flex items-center justify-between">
+        <BackButton href={`/games/${gameId}/reviews`} label="Reviews" />
+        {codebooks.length > 1 && (
+          <CodebookSwitcher codebooks={codebooks} activeCodebookId={activeCodebook.id} />
+        )}
+      </div>
+
       <div className="mt-4">
         <ReviewNav
           gameId={gameId}
@@ -105,15 +116,6 @@ export default async function ReviewDetailPage({
           prevId={prevId}
           nextId={nextId}
         />
-      </div>
-
-      <div className="mt-4 flex items-center justify-between">
-        <Link href={`/games/${gameId}/reviews`} className="text-sm underline">
-          ← Back to reviews
-        </Link>
-        {codebooks.length > 1 && (
-          <CodebookSwitcher codebooks={codebooks} activeCodebookId={activeCodebook.id} />
-        )}
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-gray-500">

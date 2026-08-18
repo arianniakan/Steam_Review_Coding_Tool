@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { cohensKappa, interpretKappa } from "@/lib/kappa";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { BackButton } from "@/components/BackButton";
 import { KappaGauge } from "./KappaGauge";
 import { CodeFrequencyChart } from "./CodeFrequencyChart";
 import { ThemeTimelineChart } from "./ThemeTimelineChart";
@@ -125,14 +125,14 @@ export default async function AnalyticsPage({
           { label: "Analytics" },
         ]}
       />
+      <div className="mt-2">
+        <BackButton href={`/games/${gameId}/codebooks/${codebookId}`} label={codebook.name} />
+      </div>
       <div className="mt-2 flex items-center justify-between">
         <div>
           <p className="text-sm text-gray-500">{codebook.game.name}</p>
           <h1 className="text-2xl font-semibold">{codebook.name} — Analytics</h1>
         </div>
-        <Link href={`/games/${gameId}/codebooks/${codebookId}`} className="text-sm underline">
-          ← Codebook
-        </Link>
       </div>
 
       {/* Reliability */}

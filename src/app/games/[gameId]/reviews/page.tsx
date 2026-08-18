@@ -10,6 +10,7 @@ import {
 } from "@/lib/reviewFilters";
 import { SavedSamples } from "./SavedSamples";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { BackButton } from "@/components/BackButton";
 
 const PAGE_SIZE = 25;
 
@@ -80,6 +81,9 @@ export default async function ReviewsPage({
           { label: game.name },
         ]}
       />
+      <div className="mt-2">
+        <BackButton href="/games" label="Games" />
+      </div>
       <div className="mt-2 flex items-center justify-between">
         <h1 className="text-2xl font-semibold">{game.name}</h1>
         <Link href={`/games/${gameId}/codebooks`} className="text-sm underline">
