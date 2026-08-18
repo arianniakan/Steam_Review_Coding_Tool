@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { buildHighlightSegments } from "@/lib/highlightSpans";
 import { createTagging, deleteTagging } from "@/lib/localDb/queries/taggings";
 import { getDefaultResearcher, getAiCoder } from "@/lib/localDb/queries/coders";
+import { RateLimitQuotaBar } from "@/components/RateLimitQuotaBar";
 import {
   parseRateLimitHeaders,
   fetchRateLimitStatus,
@@ -374,14 +375,7 @@ export function TagEditor({
         <p className="mt-1 text-xs text-gray-500">
           Suggestions are never applied automatically — accept or reject each one below.
         </p>
-        {quota && quota.reset > 0 && (
-          <p
-            className={`mt-1 text-xs ${quota.remaining <= 2 ? "text-amber-600" : "text-gray-400"}`}
-          >
-            {quota.remaining}/{quota.limit} AI requests left this hour
-            {quota.remaining === 0 ? ` — resets ${formatResetIn(quota.reset)}` : ""}
-          </p>
-        )}
+        <RateLimitQuotaBar quota={quota} label="AI requests" />
         {suggestError && <p className="mt-2 text-red-600">{suggestError}</p>}
 
         {suggestions.length > 0 && (

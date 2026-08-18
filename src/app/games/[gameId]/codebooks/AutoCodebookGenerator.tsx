@@ -8,6 +8,7 @@ import { PLAYTIME_TIERS } from "@/lib/playtimeTiers";
 import { ReviewPicker } from "./ReviewPicker";
 import { sampleReviewsForCodebook } from "@/lib/localDb/queries/reviews";
 import { createCodebookWithCodes } from "@/lib/localDb/queries/codebooks";
+import { RateLimitQuotaBar } from "@/components/RateLimitQuotaBar";
 import {
   parseRateLimitHeaders,
   fetchRateLimitStatus,
@@ -486,12 +487,7 @@ export function AutoCodebookGenerator({
                 ? `Generate proposals from ${selectedIds.size} selected review(s)`
                 : "Generate proposals"}
           </button>
-          {quota && quota.reset > 0 && (
-            <p className={`text-xs ${quota.remaining <= 1 ? "text-amber-600" : "text-gray-400"}`}>
-              {quota.remaining}/{quota.limit} codebook generations left this hour
-              {quota.remaining === 0 ? ` — resets ${formatResetIn(quota.reset)}` : ""}
-            </p>
-          )}
+          <RateLimitQuotaBar quota={quota} label="codebook generations" />
           {error && <p className="text-red-600">{error}</p>}
         </form>
       )}
