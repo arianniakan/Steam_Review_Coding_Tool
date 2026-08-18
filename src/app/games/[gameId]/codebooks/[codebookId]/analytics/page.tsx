@@ -145,13 +145,12 @@ export default function AnalyticsPage() {
         items={[
           { label: "Games", href: "/games" },
           { label: game.name, href: `/games/${gameId}/reviews` },
-          { label: "Codebooks", href: `/games/${gameId}/codebooks` },
-          { label: codebook.name, href: `/games/${gameId}/codebooks/${codebookId}` },
+          { label: codebook.name, href: `/games/${gameId}/reviews?codebookId=${codebookId}` },
           { label: "Analytics" },
         ]}
       />
       <div className="mt-2">
-        <BackButton href={`/games/${gameId}/codebooks/${codebookId}`} label={codebook.name} />
+        <BackButton href={`/games/${gameId}/reviews?codebookId=${codebookId}`} label="Reviews" />
       </div>
       <div className="mt-2 flex items-center justify-between">
         <div>

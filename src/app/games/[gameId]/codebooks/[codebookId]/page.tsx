@@ -2,14 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
 import { CodeManager } from "./CodeManager";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
 import { getGameById, type Game } from "@/lib/localDb/queries/games";
 import { getCodebookById, type Codebook } from "@/lib/localDb/queries/codebooks";
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
-import { exportCodebookCsv } from "@/lib/localDb/csvExport";
 
 export default function CodebookDetailPage() {
   const { gameId, codebookId } = useParams<{ gameId: string; codebookId: string }>();
@@ -69,23 +67,9 @@ export default function CodebookDetailPage() {
       <div className="mt-2">
         <BackButton href={`/games/${gameId}/codebooks`} label="Codebooks" />
       </div>
-      <div className="mt-2 flex items-center justify-between">
-        <div>
-          <p className="text-sm text-gray-500">{game.name}</p>
-          <h1 className="text-2xl font-semibold">{codebook.name}</h1>
-        </div>
-        <div className="flex gap-4">
-          <Link href={`/games/${gameId}/codebooks/${codebookId}/analytics`} className="text-sm underline">
-            Analytics →
-          </Link>
-          <button
-            type="button"
-            onClick={() => exportCodebookCsv(codebookId, game.name, codebook.name)}
-            className="text-sm underline"
-          >
-            Export CSV →
-          </button>
-        </div>
+      <div className="mt-2">
+        <p className="text-sm text-gray-500">{game.name}</p>
+        <h1 className="text-2xl font-semibold">{codebook.name}</h1>
       </div>
 
       <div className="mt-6">
