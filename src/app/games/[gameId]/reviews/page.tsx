@@ -11,6 +11,7 @@ import {
 import { SavedSamples } from "./SavedSamples";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
+import { ExpandableText } from "@/components/ExpandableText";
 
 const PAGE_SIZE = 25;
 
@@ -109,7 +110,7 @@ export default async function ReviewsPage({
             </p>
           )}
           {game.shortDescription && (
-            <p className="mt-2 line-clamp-2 text-sm text-gray-600">{game.shortDescription}</p>
+            <ExpandableText text={game.shortDescription} className="mt-2 text-sm text-gray-600" />
           )}
         </div>
       </div>
