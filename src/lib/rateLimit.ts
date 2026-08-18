@@ -8,21 +8,20 @@ import { Redis } from "@upstash/redis";
 // pattern for Vercel serverless functions, which don't share in-memory
 // state across invocations).
 //
-// Falls back to allowing all requests if Upstash isn't configured (e.g.
+// Falls back to allowing all requests if Redis isn't configured (e.g.
 // local dev without the env vars set) rather than breaking the route —
-// production is expected to have these set once the Upstash integration is
-// added in the Vercel dashboard.
-const redis =
-  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-    ? new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN,
-      })
-    : null;
+// production is expected to have these set via Vercel's Upstash/KV storage
+// integration, which names them KV_REST_API_URL / KV_REST_API_TOKEN (same
+// underlying Upstash Redis REST API, just Vercel's own naming convention
+// when provisioned through the dashboard rather than Upstash directly).
+const redisUrl = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
+const redisToken = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
+
+const redis = redisUrl && redisToken ? new Redis({ url: redisUrl, token: redisToken }) : null;
 
 if (!redis && process.env.NODE_ENV === "production") {
   console.warn(
-    "UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are not set — AI routes are running without rate limiting.",
+    "KV_REST_API_URL / KV_REST_API_TOKEN are not set — AI routes are running without rate limiting.",
   );
 }
 
