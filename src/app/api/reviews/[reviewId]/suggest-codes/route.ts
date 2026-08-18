@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { openai, OPENAI_MODEL } from "@/lib/openai";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 interface RawSuggestion {
   codeLabel: string;
@@ -15,11 +16,22 @@ interface IncomingCode {
   color: string;
 }
 
+const MAX_REVIEW_CHARS = 10_000; // generous for a Steam review; bounds worst-case prompt size
+const MAX_CODES = 50;
+
 // Stateless AI proxy — the local-first migration moved the database into
 // the browser, so this route no longer looks anything up itself. The
 // caller (which already has the review text and codebook loaded locally)
 // sends both directly; this route's only job is the OpenAI call.
 export async function POST(request: Request) {
+  const rateLimit = await checkRateLimit(request, "suggest-codes", 20, "1 h");
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded — try again later" },
+      { status: 429 },
+    );
+  }
+
   const body = await request.json().catch(() => ({}) as Record<string, unknown>);
   const reviewText = typeof body.reviewText === "string" ? body.reviewText : "";
   const codes = Array.isArray(body.codes) ? (body.codes as IncomingCode[]) : [];
@@ -27,8 +39,14 @@ export async function POST(request: Request) {
   if (!reviewText) {
     return NextResponse.json({ error: "reviewText is required" }, { status: 400 });
   }
+  if (reviewText.length > MAX_REVIEW_CHARS) {
+    return NextResponse.json({ error: "reviewText is too long" }, { status: 400 });
+  }
   if (codes.length === 0) {
     return NextResponse.json({ error: "This codebook has no codes yet" }, { status: 400 });
+  }
+  if (codes.length > MAX_CODES) {
+    return NextResponse.json({ error: "Too many codes in this codebook" }, { status: 400 });
   }
 
   const codebookDescription = codes.map((c) => `- ${c.label}: ${c.description}`).join("\n");
@@ -37,6 +55,7 @@ export async function POST(request: Request) {
   try {
     const completion = await openai.chat.completions.create({
       model: OPENAI_MODEL,
+      max_tokens: 2000,
       messages: [
         {
           role: "system",

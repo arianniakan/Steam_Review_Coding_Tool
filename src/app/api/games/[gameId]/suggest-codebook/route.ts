@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { openai, OPENAI_MODEL } from "@/lib/openai";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 interface RawProposal {
   label: string;
@@ -7,6 +8,7 @@ interface RawProposal {
 }
 
 const MAX_TEXT_CHARS_PER_REVIEW = 600; // bound prompt size on long reviews
+const MAX_REVIEW_TEXTS = 40; // matches the sampler's own cap, defends direct API calls too
 
 // Stateless AI proxy — sampling (which reviews, how many, balanced by
 // recommended/not, hand-picked, etc.) now happens entirely client-side
@@ -14,6 +16,14 @@ const MAX_TEXT_CHARS_PER_REVIEW = 600; // bound prompt size on long reviews
 // src/lib/localDb/queries/reviews.ts). This route just takes the resulting
 // texts and asks OpenAI to propose a codebook from them.
 export async function POST(request: Request) {
+  const rateLimit = await checkRateLimit(request, "suggest-codebook", 5, "1 h");
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded — try again later" },
+      { status: 429 },
+    );
+  }
+
   const body = await request.json().catch(() => ({}) as Record<string, unknown>);
 
   const gameName = typeof body.gameName === "string" ? body.gameName : "this game";
@@ -33,6 +43,9 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+  if (reviewTexts.length > MAX_REVIEW_TEXTS) {
+    return NextResponse.json({ error: "Too many reviews in the sample" }, { status: 400 });
+  }
 
   const reviewsBlock = reviewTexts
     .map((t, i) => `${i + 1}. ${t.slice(0, MAX_TEXT_CHARS_PER_REVIEW)}`)
@@ -42,6 +55,7 @@ export async function POST(request: Request) {
   try {
     const completion = await openai.chat.completions.create({
       model: OPENAI_MODEL,
+      max_tokens: 4000,
       messages: [
         {
           role: "system",
