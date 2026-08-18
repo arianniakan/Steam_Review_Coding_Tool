@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { openai, OPENAI_MODEL } from "@/lib/openai";
+import { buildReviewWhere, type ReviewSearchParams } from "@/lib/reviewFilters";
 
 interface RawProposal {
   label: string;
@@ -38,29 +39,55 @@ export async function POST(
     20,
   );
 
-  // Sample split evenly between recommended/not-recommended so the proposed
-  // codebook isn't skewed one-sided, favoring the most helpful (highest
-  // weighted-vote-score) reviews on each side as the most substantive text.
-  const half = Math.ceil(sampleSize / 2);
-  const [positive, negative] = await Promise.all([
-    prisma.review.findMany({
-      where: { gameId, votedUp: true, textLength: { gte: MIN_REVIEW_TEXT_LENGTH } },
-      orderBy: { weightedVoteScore: "desc" },
-      take: half,
-      select: { text: true },
-    }),
-    prisma.review.findMany({
-      where: { gameId, votedUp: false, textLength: { gte: MIN_REVIEW_TEXT_LENGTH } },
-      orderBy: { weightedVoteScore: "desc" },
-      take: half,
-      select: { text: true },
-    }),
-  ]);
+  // Researcher-set criteria — same shape/semantics as the reviews list
+  // filters, so "which reviews does the AI read" is scoped the same way
+  // browsing is. A minimum text length always applies (floor: whichever is
+  // higher of the researcher's setting or the built-in noise floor).
+  const filters = (body.filters ?? {}) as ReviewSearchParams;
+  const requestedMinLength = Number(filters.minLength);
+  const effectiveMinLength = Math.max(
+    Number.isFinite(requestedMinLength) ? requestedMinLength : 0,
+    MIN_REVIEW_TEXT_LENGTH,
+  );
+  const scopedFilters: ReviewSearchParams = {
+    ...filters,
+    minLength: String(effectiveMinLength),
+  };
 
-  const sample = [...positive, ...negative];
+  let sample: { text: string }[];
+  if (filters.voted === "up" || filters.voted === "down") {
+    // Researcher already pinned one side — just sample that, no balancing.
+    sample = await prisma.review.findMany({
+      where: buildReviewWhere(gameId, scopedFilters),
+      orderBy: { weightedVoteScore: "desc" },
+      take: sampleSize,
+      select: { text: true },
+    });
+  } else {
+    // Split evenly between recommended/not-recommended so the proposed
+    // codebook isn't skewed one-sided, favoring the most helpful (highest
+    // weighted-vote-score) reviews on each side as the most substantive text.
+    const half = Math.ceil(sampleSize / 2);
+    const [positive, negative] = await Promise.all([
+      prisma.review.findMany({
+        where: buildReviewWhere(gameId, { ...scopedFilters, voted: "up" }),
+        orderBy: { weightedVoteScore: "desc" },
+        take: half,
+        select: { text: true },
+      }),
+      prisma.review.findMany({
+        where: buildReviewWhere(gameId, { ...scopedFilters, voted: "down" }),
+        orderBy: { weightedVoteScore: "desc" },
+        take: half,
+        select: { text: true },
+      }),
+    ]);
+    sample = [...positive, ...negative];
+  }
+
   if (sample.length === 0) {
     return NextResponse.json(
-      { error: "No substantive reviews found for this game yet — ingest reviews first" },
+      { error: "No reviews match these criteria — loosen the filters and try again" },
       { status: 400 },
     );
   }

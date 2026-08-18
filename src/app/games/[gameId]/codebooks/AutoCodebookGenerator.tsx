@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { COLOR_PRESETS } from "./[codebookId]/CodeManager";
+import { PLAYTIME_TIERS } from "@/lib/playtimeTiers";
 
 interface Proposal {
   label: string;
@@ -12,12 +13,43 @@ interface Proposal {
   selected: boolean;
 }
 
-export function AutoCodebookGenerator({ gameId }: { gameId: string }) {
+interface CriteriaFilters {
+  voted: string;
+  playtime: string;
+  earlyAccess: string;
+  purchase: string;
+  language: string;
+  from: string;
+  to: string;
+  minVotes: string;
+  minLength: string;
+}
+
+const EMPTY_FILTERS: CriteriaFilters = {
+  voted: "",
+  playtime: "",
+  earlyAccess: "",
+  purchase: "",
+  language: "",
+  from: "",
+  to: "",
+  minVotes: "",
+  minLength: "",
+};
+
+export function AutoCodebookGenerator({
+  gameId,
+  languages,
+}: {
+  gameId: string;
+  languages: { language: string; _count: number }[];
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [focus, setFocus] = useState("");
   const [sampleSize, setSampleSize] = useState(40);
   const [targetCount, setTargetCount] = useState(8);
+  const [filters, setFilters] = useState<CriteriaFilters>(EMPTY_FILTERS);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,16 +58,28 @@ export function AutoCodebookGenerator({ gameId }: { gameId: string }) {
   const [codebookName, setCodebookName] = useState("");
   const [creating, setCreating] = useState(false);
 
+  function updateFilter(patch: Partial<CriteriaFilters>) {
+    setFilters((prev) => ({ ...prev, ...patch }));
+  }
+
   async function handleGenerate(e: React.FormEvent) {
     e.preventDefault();
     setGenerating(true);
     setError(null);
     setProposals(null);
     try {
+      const activeFilters = Object.fromEntries(
+        Object.entries(filters).filter(([, v]) => v !== ""),
+      );
       const res = await fetch(`/api/games/${gameId}/suggest-codebook`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sampleSize, targetCount, focus: focus || undefined }),
+        body: JSON.stringify({
+          sampleSize,
+          targetCount,
+          focus: focus || undefined,
+          filters: activeFilters,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to generate codebook");
@@ -122,9 +166,10 @@ export function AutoCodebookGenerator({ gameId }: { gameId: string }) {
         </button>
       </div>
       <p className="mt-1 text-xs text-gray-500">
-        The AI reads a sample of real reviews (split evenly between recommended and
-        not-recommended, favoring the most helpful ones) and proposes a starting codebook.
-        Nothing is created until you review and select codes below.
+        The AI reads a sample of real reviews matching the criteria below (split evenly
+        between recommended and not-recommended unless you pin one side, favoring the most
+        helpful reviews) and proposes a starting codebook. Nothing is created until you
+        review and select codes.
       </p>
 
       {!proposals && (
@@ -139,6 +184,126 @@ export function AutoCodebookGenerator({ gameId }: { gameId: string }) {
               className="rounded border border-gray-300 px-2 py-1"
             />
           </label>
+
+          <div className="rounded border border-gray-200 p-3">
+            <p className="text-xs font-medium text-gray-500">
+              Which reviews should the AI look at?
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <label className="flex flex-col gap-1">
+                <span>Recommended</span>
+                <select
+                  value={filters.voted}
+                  onChange={(e) => updateFilter({ voted: e.target.value })}
+                  className="rounded border border-gray-300 px-2 py-1"
+                >
+                  <option value="">All (balanced sample)</option>
+                  <option value="up">Recommended only</option>
+                  <option value="down">Not recommended only</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span>Playtime</span>
+                <select
+                  value={filters.playtime}
+                  onChange={(e) => updateFilter({ playtime: e.target.value })}
+                  className="rounded border border-gray-300 px-2 py-1"
+                >
+                  <option value="">All</option>
+                  {PLAYTIME_TIERS.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span>Early access</span>
+                <select
+                  value={filters.earlyAccess}
+                  onChange={(e) => updateFilter({ earlyAccess: e.target.value })}
+                  className="rounded border border-gray-300 px-2 py-1"
+                >
+                  <option value="">All</option>
+                  <option value="true">Written during EA only</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span>Purchase</span>
+                <select
+                  value={filters.purchase}
+                  onChange={(e) => updateFilter({ purchase: e.target.value })}
+                  className="rounded border border-gray-300 px-2 py-1"
+                >
+                  <option value="">All</option>
+                  <option value="verified">Verified purchase only</option>
+                  <option value="free">Received for free only</option>
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span>Language</span>
+                <select
+                  value={filters.language}
+                  onChange={(e) => updateFilter({ language: e.target.value })}
+                  className="rounded border border-gray-300 px-2 py-1"
+                >
+                  <option value="">All</option>
+                  {languages.map((l) => (
+                    <option key={l.language} value={l.language}>
+                      {l.language} ({l._count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span>Min. helpful votes</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={filters.minVotes}
+                  onChange={(e) => updateFilter({ minVotes: e.target.value })}
+                  className="rounded border border-gray-300 px-2 py-1"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span>Min. length (chars)</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={filters.minLength}
+                  onChange={(e) => updateFilter({ minLength: e.target.value })}
+                  className="rounded border border-gray-300 px-2 py-1"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span>From</span>
+                <input
+                  type="date"
+                  value={filters.from}
+                  onChange={(e) => updateFilter({ from: e.target.value })}
+                  className="rounded border border-gray-300 px-2 py-1"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span>To</span>
+                <input
+                  type="date"
+                  value={filters.to}
+                  onChange={(e) => updateFilter({ to: e.target.value })}
+                  className="rounded border border-gray-300 px-2 py-1"
+                />
+              </label>
+            </div>
+          </div>
+
           <div className="flex gap-3">
             <label className="flex flex-1 flex-col gap-1">
               <span className="font-medium">Sample size</span>

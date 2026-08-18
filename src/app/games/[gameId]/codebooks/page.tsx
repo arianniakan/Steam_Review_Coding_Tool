@@ -15,11 +15,19 @@ export default async function CodebooksPage({
   const game = await prisma.game.findUnique({ where: { id: gameId } });
   if (!game) notFound();
 
-  const codebooks = await prisma.codebook.findMany({
-    where: { gameId },
-    orderBy: { createdAt: "desc" },
-    include: { _count: { select: { codes: true } } },
-  });
+  const [codebooks, languages] = await Promise.all([
+    prisma.codebook.findMany({
+      where: { gameId },
+      orderBy: { createdAt: "desc" },
+      include: { _count: { select: { codes: true } } },
+    }),
+    prisma.review.groupBy({
+      by: ["language"],
+      where: { gameId },
+      _count: true,
+      orderBy: { _count: { language: "desc" } },
+    }),
+  ]);
 
   return (
     <main className="mx-auto max-w-xl p-8">
@@ -55,7 +63,7 @@ export default async function CodebooksPage({
       </ul>
 
       <CreateCodebookForm gameId={gameId} />
-      <AutoCodebookGenerator gameId={gameId} />
+      <AutoCodebookGenerator gameId={gameId} languages={languages} />
     </main>
   );
 }
