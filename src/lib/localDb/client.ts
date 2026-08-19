@@ -65,6 +65,41 @@ async function hasExistingLocalDatabase(): Promise<boolean> {
   }
 }
 
+// PGlite refuses to loadDataDir into a database that already has data —
+// it throws "Database already exists, cannot load from tarball" if
+// PG_VERSION is already present on the target filesystem. Closing our own
+// connection doesn't erase the underlying IndexedDB store, so "Open
+// project" has to delete it explicitly first. onblocked (another tab still
+// holding a connection open) doesn't mean the delete failed — it just
+// means it's waiting for that connection to close, which may still happen;
+// only give up and surface an actionable error after a real timeout.
+function deleteIndexedDbDatabase(name: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let blocked = false;
+    const req = indexedDB.deleteDatabase(name);
+    const timer = setTimeout(() => {
+      reject(
+        new Error(
+          blocked
+            ? "Couldn't open project — close other tabs of this app and try again"
+            : "Timed out clearing the existing project data",
+        ),
+      );
+    }, 10_000);
+    req.onsuccess = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    req.onerror = () => {
+      clearTimeout(timer);
+      reject(req.error ?? new Error("Failed to clear the existing project data"));
+    };
+    req.onblocked = () => {
+      blocked = true;
+    };
+  });
+}
+
 function isFirstVisit(): boolean {
   return localStorage.getItem(INIT_FLAG_KEY) !== "1";
 }
@@ -105,6 +140,11 @@ export async function resetDbFromFile(file: File): Promise<void> {
     const existing = await dbPromise;
     await existing.close();
   }
+  // Null it out before the delete, not after — if deleteIndexedDbDatabase
+  // throws below, dbPromise must not be left pointing at the connection we
+  // just closed (every subsequent getDb() would hand out a dead client).
+  dbPromise = null;
+  await deleteIndexedDbDatabase(PGLITE_IDB_NAME);
   markInitialized();
   dbPromise = createClient(file);
   await dbPromise;
