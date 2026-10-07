@@ -30,10 +30,10 @@ export interface ReviewSearchParams {
 // instead of a Prisma `where` object, since queries now run directly
 // against PGlite rather than through Prisma Client.
 export function buildReviewWhereSql(
-  gameId: string,
+  gameId: string | string[],
   sp: ReviewSearchParams,
 ): { sql: string; params: unknown[] } {
-  const conditions: string[] = [`"gameId" = $1`];
+  const conditions: string[] = Array.isArray(gameId) ? [`"gameId" = ANY($1)`] : [`"gameId" = $1`];
   const params: unknown[] = [gameId];
 
   function push(template: string, value: unknown) {

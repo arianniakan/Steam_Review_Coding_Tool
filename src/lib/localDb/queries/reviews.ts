@@ -33,7 +33,7 @@ export interface ReviewWithTaggingCount extends Review {
 
 const PAGE_SIZE = 25;
 
-export async function countReviews(gameId: string, sp: ReviewSearchParams): Promise<number> {
+export async function countReviews(gameId: string | string[], sp: ReviewSearchParams): Promise<number> {
   const db = await getDb();
   const { sql, params } = buildReviewWhereSql(gameId, sp);
   const result = await db.query<{ count: number }>(
@@ -49,7 +49,7 @@ export async function countReviews(gameId: string, sp: ReviewSearchParams): Prom
 // optional — when there's no codebook yet for the game, counts are 0 either
 // way, so falling back to unscoped is harmless.
 export async function countCodedReviews(
-  gameId: string,
+  gameId: string | string[],
   sp: ReviewSearchParams,
   codebookId?: string,
 ): Promise<number> {
@@ -70,15 +70,16 @@ export async function countCodedReviews(
 }
 
 export async function listReviews(
-  gameId: string,
+  gameId: string | string[],
   sp: ReviewSearchParams,
   page: number,
   codebookId?: string,
+  pageSize: number = PAGE_SIZE,
 ): Promise<ReviewWithTaggingCount[]> {
   const db = await getDb();
   const { sql, params } = buildReviewWhereSql(gameId, sp);
   const orderBy = buildReviewOrderBySql(sp);
-  const offset = Math.max(page - 1, 0) * PAGE_SIZE;
+  const offset = Math.max(page - 1, 0) * pageSize;
   const codebookFilter = codebookId
     ? `AND c."codebookId" = $${params.length + 1}`
     : "";
@@ -89,7 +90,7 @@ export async function listReviews(
      FROM "Review" r
      WHERE ${sql}
      ORDER BY ${orderBy}
-     LIMIT ${PAGE_SIZE} OFFSET ${offset}`,
+     LIMIT ${pageSize} OFFSET ${offset}`,
     codebookId ? [...params, codebookId] : params,
   );
   return result.rows;
@@ -102,7 +103,7 @@ export async function getReviewById(id: string): Promise<Review | null> {
 }
 
 export async function listReviewIdsOrdered(
-  gameId: string,
+  gameId: string | string[],
   sp: ReviewSearchParams,
 ): Promise<string[]> {
   const db = await getDb();
@@ -116,12 +117,13 @@ export async function listReviewIdsOrdered(
 }
 
 export async function groupReviewsByLanguage(
-  gameId: string,
+  gameId: string | string[],
 ): Promise<{ language: string; count: number }[]> {
   const db = await getDb();
+  const clause = Array.isArray(gameId) ? `"gameId" = ANY($1)` : `"gameId" = $1`;
   const result = await db.query<{ language: string; count: number }>(
     `SELECT "language", COUNT(*)::int AS count FROM "Review"
-     WHERE "gameId" = $1 GROUP BY "language" ORDER BY count DESC`,
+     WHERE ${clause} GROUP BY "language" ORDER BY count DESC`,
     [gameId],
   );
   return result.rows;
@@ -243,7 +245,7 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 async function fetchSampleTexts(
-  gameId: string,
+  gameId: string | string[],
   sp: ReviewSearchParams,
   count: number,
   mode: "helpful" | "random",
@@ -266,7 +268,7 @@ async function fetchSampleTexts(
 }
 
 export async function sampleReviewsForCodebook(options: {
-  gameId: string;
+  gameId: string | string[];
   filters: ReviewSearchParams;
   reviewIds: string[];
   sampleSize: number;
@@ -278,12 +280,15 @@ export async function sampleReviewsForCodebook(options: {
   const { gameId, filters, reviewIds, sampleSize, ratio, sampleMode, maxSampleSize, minReviewTextLength } =
     options;
 
+  // Review ids are globally unique (not just unique per game), so a
+  // hand-picked selection needs no gameId filter — this also makes
+  // hand-picking work unmodified when gameId is an array of project games.
   if (reviewIds.length > 0) {
     const db = await getDb();
     const capped = reviewIds.slice(0, maxSampleSize);
     const result = await db.query<{ text: string }>(
-      `SELECT "text" FROM "Review" WHERE "gameId" = $1 AND "id" = ANY($2)`,
-      [gameId, capped],
+      `SELECT "text" FROM "Review" WHERE "id" = ANY($1)`,
+      [capped],
     );
     return result.rows.map((r) => r.text);
   }
@@ -306,4 +311,59 @@ export async function sampleReviewsForCodebook(options: {
     fetchSampleTexts(gameId, { ...scopedFilters, voted: "down" }, negativeCount, sampleMode),
   ]);
   return [...positive, ...negative];
+}
+
+// Splits sampleSize across every member game of a project, then delegates
+// to sampleReviewsForCodebook once per game (reusing all its up/down-ratio
+// and helpful/random logic unchanged) and concatenates the results.
+// "equal" gives every game the same share (remainder handed to the first
+// games); "proportional" weights each game's share by its own matching
+// review count, so a game with 10x the reviews of another contributes 10x
+// as many sample texts instead of crowding out the smaller game entirely.
+export async function sampleReviewsAcrossGames(options: {
+  gameIds: string[];
+  mode: "equal" | "proportional";
+  filters: ReviewSearchParams;
+  reviewIds: string[];
+  sampleSize: number;
+  ratio: number;
+  sampleMode: "helpful" | "random";
+  maxSampleSize: number;
+  minReviewTextLength: number;
+}): Promise<string[]> {
+  const { gameIds, mode, reviewIds, sampleSize, maxSampleSize, ...rest } = options;
+
+  if (reviewIds.length > 0) {
+    return sampleReviewsForCodebook({ gameId: gameIds, reviewIds, sampleSize, maxSampleSize, ...rest });
+  }
+  if (gameIds.length === 0) return [];
+
+  let shares: number[];
+  if (mode === "proportional") {
+    const counts = await Promise.all(gameIds.map((id) => countReviews(id, rest.filters)));
+    const total = counts.reduce((a, b) => a + b, 0);
+    shares =
+      total === 0
+        ? gameIds.map(() => Math.floor(sampleSize / gameIds.length))
+        : counts.map((c) => Math.round((sampleSize * c) / total));
+  } else {
+    const base = Math.floor(sampleSize / gameIds.length);
+    const remainder = sampleSize - base * gameIds.length;
+    shares = gameIds.map((_, i) => base + (i < remainder ? 1 : 0));
+  }
+
+  const perGameTexts = await Promise.all(
+    gameIds.map((gameId, i) =>
+      shares[i] > 0
+        ? sampleReviewsForCodebook({
+            gameId,
+            reviewIds: [],
+            sampleSize: shares[i],
+            maxSampleSize: shares[i],
+            ...rest,
+          })
+        : Promise.resolve([]),
+    ),
+  );
+  return perGameTexts.flat();
 }

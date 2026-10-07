@@ -89,6 +89,7 @@ export async function listTaggingsForReview(
 
 export interface TaggingForAnalytics extends TaggingWithCode {
   reviewTimestampCreated: string;
+  reviewGameId: string;
 }
 
 export async function listTaggingsForCodebookAnalytics(
@@ -96,7 +97,7 @@ export async function listTaggingsForCodebookAnalytics(
 ): Promise<TaggingForAnalytics[]> {
   const db = await getDb();
   const result = await db.query<TaggingForAnalytics>(
-    `SELECT ${TAGGING_JOIN_SELECT}, r."timestampCreated" AS "reviewTimestampCreated"
+    `SELECT ${TAGGING_JOIN_SELECT}, r."timestampCreated" AS "reviewTimestampCreated", r."gameId" AS "reviewGameId"
      FROM "Tagging" t
      JOIN "Code" c ON c."id" = t."codeId"
      JOIN "Coder" co ON co."id" = t."coderId"

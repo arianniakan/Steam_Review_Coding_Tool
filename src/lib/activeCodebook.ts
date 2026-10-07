@@ -38,3 +38,37 @@ export function resolveActiveCodebookId(
 
   return codebooks[0]!.id;
 }
+
+// Same concept, keyed per-project instead of per-game — a project's active
+// codebook is a separate persistent selection from any single member game's.
+const PROJECT_KEY_PREFIX = "active-codebook:project:";
+
+export function getStoredActiveProjectCodebookId(projectId: string): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(PROJECT_KEY_PREFIX + projectId);
+}
+
+export function setStoredActiveProjectCodebookId(projectId: string, codebookId: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(PROJECT_KEY_PREFIX + projectId, codebookId);
+}
+
+export function resolveActiveProjectCodebookId(
+  projectId: string,
+  codebooks: { id: string }[],
+  urlCodebookId: string | null,
+): string | undefined {
+  if (codebooks.length === 0) return undefined;
+
+  if (urlCodebookId && codebooks.some((cb) => cb.id === urlCodebookId)) {
+    setStoredActiveProjectCodebookId(projectId, urlCodebookId);
+    return urlCodebookId;
+  }
+
+  const stored = getStoredActiveProjectCodebookId(projectId);
+  if (stored && codebooks.some((cb) => cb.id === stored)) {
+    return stored;
+  }
+
+  return codebooks[0]!.id;
+}
