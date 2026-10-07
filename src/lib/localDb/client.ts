@@ -9,6 +9,50 @@ const INIT_FLAG_KEY = "project2b-initialized";
 
 let dbPromise: Promise<PGlite> | null = null;
 
+// schema.sql only ever runs for a brand-new browser (gated on the "Game"
+// table not existing yet — see below), so a schema change added after this
+// app has already shipped would silently never reach an already-provisioned
+// database: every returning visitor to the live app, and every restored
+// seed.tar.gz / exported project file. This runs unconditionally on every
+// connect (fresh bootstrap, loaded dump, or long-existing browser alike),
+// gated on its own idempotency check, so later schema additions land
+// everywhere without needing a real migration runner.
+async function runMigrations(db: PGlite): Promise<void> {
+  const check = await db.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT FROM information_schema.columns
+       WHERE table_name = 'Codebook' AND column_name = 'projectId'
+     ) AS exists`,
+  );
+  if (check.rows[0]?.exists) return;
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS "Project" (
+      "id" TEXT PRIMARY KEY,
+      "name" TEXT NOT NULL,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS "ProjectGame" (
+      "projectId" TEXT NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+      "gameId" TEXT NOT NULL REFERENCES "Game"("id") ON DELETE CASCADE,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY ("projectId", "gameId")
+    );
+    CREATE INDEX IF NOT EXISTS "ProjectGame_gameId_idx" ON "ProjectGame"("gameId");
+
+    ALTER TABLE "Codebook" ALTER COLUMN "gameId" DROP NOT NULL;
+    ALTER TABLE "Codebook" ADD COLUMN IF NOT EXISTS "projectId" TEXT REFERENCES "Project"("id") ON DELETE CASCADE;
+    CREATE INDEX IF NOT EXISTS "Codebook_projectId_idx" ON "Codebook"("projectId");
+
+    DO $mig$ BEGIN
+      ALTER TABLE "Codebook" ADD CONSTRAINT "Codebook_scope_check"
+        CHECK (("gameId" IS NOT NULL) <> ("projectId" IS NOT NULL));
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $mig$;
+  `);
+}
+
 async function createClient(loadDataDir?: Blob | File): Promise<PGlite> {
   // Some environments (seen in automated browser testing) intermittently
   // fail to write PGlite's wasm/data assets to the HTTP disk cache
@@ -38,6 +82,8 @@ async function createClient(loadDataDir?: Blob | File): Promise<PGlite> {
       );
       await db.exec(schemaSql);
     }
+
+    await runMigrations(db);
 
     return db;
   } finally {

@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { createCodebook, type Codebook } from "@/lib/localDb/queries/codebooks";
+import { createCodebook, createCodebookForProject, type Codebook } from "@/lib/localDb/queries/codebooks";
+
+type CreateScope = { type: "game"; gameId: string } | { type: "project"; projectId: string };
 
 export function CreateCodebookForm({
-  gameId,
+  scope,
   onCreated,
 }: {
-  gameId: string;
+  scope: CreateScope;
   onCreated: (codebook: Codebook & { codeCount: number }) => void;
 }) {
   const [name, setName] = useState("");
@@ -20,7 +22,8 @@ export function CreateCodebookForm({
     setSubmitting(true);
     setError(null);
     try {
-      const created = await createCodebook(gameId, name);
+      const created =
+        scope.type === "game" ? await createCodebook(scope.gameId, name) : await createCodebookForProject(scope.projectId, name);
       onCreated({ ...created, codeCount: 0 });
       setName("");
       toast.success(`Created codebook "${created.name}"`);

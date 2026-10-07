@@ -17,6 +17,9 @@ export default function Home() {
         <Link href="/games" className="underline">
           Browse ingested games →
         </Link>
+        <Link href="/projects" className="underline">
+          Projects (compare coding across multiple games) →
+        </Link>
       </div>
     </main>
   );

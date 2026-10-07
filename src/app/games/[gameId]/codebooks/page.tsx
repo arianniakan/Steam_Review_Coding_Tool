@@ -94,12 +94,11 @@ export default function CodebooksPage() {
       </ul>
 
       <CreateCodebookForm
-        gameId={gameId}
+        scope={{ type: "game", gameId }}
         onCreated={(cb) => setCodebooks((prev) => [cb, ...prev])}
       />
       <AutoCodebookGenerator
-        gameId={gameId}
-        gameName={game.name}
+        scope={{ type: "game", gameId, gameName: game.name }}
         languages={languages}
         savedSamples={savedSamples}
       />

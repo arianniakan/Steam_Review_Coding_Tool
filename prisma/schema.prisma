@@ -29,6 +29,7 @@ model Game {
   codebooks    Codebook[]
   events       Event[]
   savedSamples SavedSample[]
+  projects     ProjectGame[]
 }
 
 // A named, reusable filter preset for the review browser — e.g. "review-bomb
@@ -102,10 +103,39 @@ model Coder {
   taggings Tagging[]
 }
 
-model Codebook {
+// Groups multiple games under one shared codebook/analysis — a game can
+// belong to any number of projects (ProjectGame is a plain join table)
+// since Review stays keyed only by gameId regardless of project membership.
+model Project {
   id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  games     ProjectGame[]
+  codebooks Codebook[]
+}
+
+model ProjectGame {
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   gameId    String
   game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([projectId, gameId])
+  @@index([gameId])
+}
+
+// Scoped to exactly one game (legacy, single-game analysis) OR one project
+// (spans every game in that project) — never both, never neither; enforced
+// by a CHECK constraint in schema.sql (Prisma's own schema language has no
+// portable way to express "exactly one of these two FKs is set").
+model Codebook {
+  id        String   @id @default(cuid())
+  gameId    String?
+  game      Game?    @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   name      String
   version   Int      @default(1)
   createdAt DateTime @default(now())
@@ -113,6 +143,7 @@ model Codebook {
   codes Code[]
 
   @@index([gameId])
+  @@index([projectId])
 }
 
 model Code {

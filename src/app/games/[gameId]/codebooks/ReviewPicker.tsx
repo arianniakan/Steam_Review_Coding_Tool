@@ -6,6 +6,7 @@ import type { ReviewSearchParams } from "@/lib/localDb/queries/reviewFilters";
 
 interface ReviewRow {
   id: string;
+  gameId: string;
   text: string;
   votedUp: boolean;
   votesUp: number;
@@ -27,11 +28,13 @@ interface FilterValues {
 
 export function ReviewPicker({
   gameId,
+  gameNames,
   filters,
   selectedIds,
   onToggle,
 }: {
-  gameId: string;
+  gameId: string | string[];
+  gameNames?: Record<string, string>;
   filters: FilterValues;
   selectedIds: Set<string>;
   onToggle: (id: string) => void;
@@ -103,6 +106,11 @@ export function ReviewPicker({
                 />
                 <div>
                   <div className="flex flex-wrap items-center gap-1.5 text-gray-500">
+                    {gameNames && (
+                      <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700">
+                        {gameNames[r.gameId] ?? "Unknown game"}
+                      </span>
+                    )}
                     <span className={r.votedUp ? "text-green-700" : "text-red-700"}>
                       {r.votedUp ? "Recommended" : "Not recommended"}
                     </span>

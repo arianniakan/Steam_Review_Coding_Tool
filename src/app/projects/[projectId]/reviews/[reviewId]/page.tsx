@@ -3,61 +3,61 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { TagEditor } from "./TagEditor";
-import { ReviewNav } from "./ReviewNav";
+import { TagEditor } from "@/app/games/[gameId]/reviews/[reviewId]/TagEditor";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
 import { CodebookToolbar } from "@/components/CodebookToolbar";
-import type { ReviewSearchParams } from "@/lib/localDb/queries/reviewFilters";
+import { getProjectById, type Project } from "@/lib/localDb/queries/projects";
+import { getReviewById, type Review } from "@/lib/localDb/queries/reviews";
 import { getGameById, type Game } from "@/lib/localDb/queries/games";
-import { getReviewById, listReviewIdsOrdered, type Review } from "@/lib/localDb/queries/reviews";
-import { listCodebooksForGame, type Codebook } from "@/lib/localDb/queries/codebooks";
+import { listCodebooksForProject, type Codebook } from "@/lib/localDb/queries/codebooks";
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { listTaggingsForReview, type TaggingWithCode } from "@/lib/localDb/queries/taggings";
-import { resolveActiveCodebookId } from "@/lib/activeCodebook";
+import { resolveActiveProjectCodebookId } from "@/lib/activeCodebook";
 
-type SearchParams = ReviewSearchParams & { codebookId?: string };
-
-export default function ReviewDetailPage() {
-  const { gameId, reviewId } = useParams<{ gameId: string; reviewId: string }>();
+export default function ProjectReviewDetailPage() {
+  const { projectId, reviewId } = useParams<{ projectId: string; reviewId: string }>();
   const searchParams = useSearchParams();
-  const sp: SearchParams = Object.fromEntries(searchParams.entries());
 
   const [loading, setLoading] = useState(true);
-  const [game, setGame] = useState<Game | null>(null);
+  const [project, setProject] = useState<Project | null>(null);
   const [review, setReview] = useState<Review | null>(null);
+  const [game, setGame] = useState<Game | null>(null);
   const [codebooks, setCodebooks] = useState<Codebook[]>([]);
   const [activeCodebookId, setActiveCodebookId] = useState<string | undefined>(undefined);
   const [codes, setCodes] = useState<Code[]>([]);
   const [taggings, setTaggings] = useState<TaggingWithCode[]>([]);
-  const [orderedIds, setOrderedIds] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const [g, r, cbs] = await Promise.all([
-        getGameById(gameId),
+      const [p, r, cbs] = await Promise.all([
+        getProjectById(projectId),
         getReviewById(reviewId),
-        listCodebooksForGame(gameId),
+        listCodebooksForProject(projectId),
       ]);
       if (cancelled) return;
-      setGame(g);
-      setReview(r && r.gameId === gameId ? r : null);
+      setProject(p);
+      setReview(r);
       setCodebooks(cbs);
 
+      if (r) {
+        const g = await getGameById(r.gameId);
+        if (cancelled) return;
+        setGame(g);
+      }
+
       if (cbs.length > 0) {
-        const active = resolveActiveCodebookId(gameId, cbs, searchParams.get("codebookId"))!;
+        const active = resolveActiveProjectCodebookId(projectId, cbs, searchParams.get("codebookId"))!;
         setActiveCodebookId(active);
-        const [cds, tgs, ids] = await Promise.all([
+        const [cds, tgs] = await Promise.all([
           listCodesForCodebook(active),
           listTaggingsForReview(reviewId, active),
-          listReviewIdsOrdered(gameId, sp),
         ]);
         if (cancelled) return;
         setCodes(cds);
         setTaggings(tgs);
-        setOrderedIds(ids);
       }
       setLoading(false);
     })();
@@ -65,12 +65,17 @@ export default function ReviewDetailPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameId, reviewId, searchParams.toString()]);
+  }, [projectId, reviewId, searchParams.toString()]);
+
+  const backQuery = new URLSearchParams(searchParams.toString());
+  backQuery.delete("codebookId");
+  if (activeCodebookId) backQuery.set("codebookId", activeCodebookId);
+  const backHref = `/projects/${projectId}/reviews?${backQuery.toString()}`;
 
   const breadcrumbItems = [
-    { label: "Games", href: "/games" },
-    { label: game?.name ?? "…", href: `/games/${gameId}/reviews` },
-    { label: "Reviews", href: `/games/${gameId}/reviews` },
+    { label: "Projects", href: "/projects" },
+    { label: project?.name ?? "…", href: `/projects/${projectId}` },
+    { label: "Reviews", href: backHref },
     { label: "Review" },
   ];
 
@@ -82,7 +87,7 @@ export default function ReviewDetailPage() {
     );
   }
 
-  if (!game || !review) {
+  if (!project || !review) {
     return (
       <main className="mx-auto max-w-2xl p-8">
         <p className="text-sm text-gray-500">Review not found.</p>
@@ -95,11 +100,11 @@ export default function ReviewDetailPage() {
       <main className="mx-auto max-w-2xl p-8">
         <Breadcrumbs items={breadcrumbItems} />
         <div className="mt-2">
-          <BackButton href={`/games/${gameId}/reviews`} label="Reviews" />
+          <BackButton href={backHref} label="Reviews" />
         </div>
         <p className="mt-4 text-sm text-gray-500">
-          No codebooks exist for this game yet.{" "}
-          <Link href={`/games/${gameId}/codebooks`} className="underline">
+          No codebooks exist for this project yet.{" "}
+          <Link href={`/projects/${projectId}/codebooks`} className="underline">
             Create one first →
           </Link>
         </p>
@@ -107,54 +112,27 @@ export default function ReviewDetailPage() {
     );
   }
 
-  const currentIndex = orderedIds.findIndex((id) => id === reviewId);
-  const position = currentIndex === -1 ? 1 : currentIndex + 1;
-  const prevId = currentIndex > 0 ? orderedIds[currentIndex - 1] : undefined;
-  const nextId =
-    currentIndex !== -1 && currentIndex < orderedIds.length - 1
-      ? orderedIds[currentIndex + 1]
-      : undefined;
-
-  const navQuery = new URLSearchParams();
-  if (sp.voted) navQuery.set("voted", sp.voted);
-  if (sp.earlyAccess) navQuery.set("earlyAccess", sp.earlyAccess);
-  if (sp.playtime) navQuery.set("playtime", sp.playtime);
-  if (sp.from) navQuery.set("from", sp.from);
-  if (sp.to) navQuery.set("to", sp.to);
-  if (sp.purchase) navQuery.set("purchase", sp.purchase);
-  if (sp.language) navQuery.set("language", sp.language);
-  if (sp.minVotes) navQuery.set("minVotes", sp.minVotes);
-  if (sp.minLength) navQuery.set("minLength", sp.minLength);
-  if (sp.sort) navQuery.set("sort", sp.sort);
-  if (activeCodebookId) navQuery.set("codebookId", activeCodebookId);
-
   return (
     <main className="mx-auto max-w-2xl p-8">
       <Breadcrumbs items={breadcrumbItems} />
 
       <div className="mt-2">
-        <BackButton href={`/games/${gameId}/reviews`} label="Reviews" />
+        <BackButton href={backHref} label="Reviews" />
       </div>
 
       <CodebookToolbar
-        scope={{ type: "game", gameId }}
-        contextName={game.name}
+        scope={{ type: "project", projectId }}
+        contextName={project.name}
         codebooks={codebooks}
         activeCodebookId={activeCodebookId}
       />
 
-      <div className="mt-4">
-        <ReviewNav
-          gameId={gameId}
-          query={navQuery.toString()}
-          position={position}
-          total={orderedIds.length}
-          prevId={prevId}
-          nextId={nextId}
-        />
-      </div>
-
       <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+        {game && (
+          <span className="rounded bg-gray-100 px-1.5 py-0.5 font-medium text-gray-700">
+            {game.name}
+          </span>
+        )}
         <span className={review.votedUp ? "text-green-700" : "text-red-700"}>
           {review.votedUp ? "Recommended" : "Not recommended"}
         </span>
@@ -186,17 +164,6 @@ export default function ReviewDetailPage() {
           coder: { name: t.coderName, kind: t.coderKind },
         }))}
       />
-
-      <div className="mt-6">
-        <ReviewNav
-          gameId={gameId}
-          query={navQuery.toString()}
-          position={position}
-          total={orderedIds.length}
-          prevId={prevId}
-          nextId={nextId}
-        />
-      </div>
     </main>
   );
 }

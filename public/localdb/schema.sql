@@ -65,14 +65,33 @@ CREATE TABLE IF NOT EXISTS "Coder" (
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS "Codebook" (
+CREATE TABLE IF NOT EXISTS "Project" (
   "id" TEXT PRIMARY KEY,
-  "gameId" TEXT NOT NULL REFERENCES "Game"("id") ON DELETE CASCADE,
   "name" TEXT NOT NULL,
-  "version" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS "ProjectGame" (
+  "projectId" TEXT NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+  "gameId" TEXT NOT NULL REFERENCES "Game"("id") ON DELETE CASCADE,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY ("projectId", "gameId")
+);
+CREATE INDEX IF NOT EXISTS "ProjectGame_gameId_idx" ON "ProjectGame"("gameId");
+
+-- A codebook is scoped to exactly one game (legacy) OR one project (spans
+-- every game in that project) — never both, never neither.
+CREATE TABLE IF NOT EXISTS "Codebook" (
+  "id" TEXT PRIMARY KEY,
+  "gameId" TEXT REFERENCES "Game"("id") ON DELETE CASCADE,
+  "projectId" TEXT REFERENCES "Project"("id") ON DELETE CASCADE,
+  "name" TEXT NOT NULL,
+  "version" INTEGER NOT NULL DEFAULT 1,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT "Codebook_scope_check" CHECK (("gameId" IS NOT NULL) <> ("projectId" IS NOT NULL))
+);
 CREATE INDEX IF NOT EXISTS "Codebook_gameId_idx" ON "Codebook"("gameId");
+CREATE INDEX IF NOT EXISTS "Codebook_projectId_idx" ON "Codebook"("projectId");
 
 CREATE TABLE IF NOT EXISTS "Code" (
   "id" TEXT PRIMARY KEY,

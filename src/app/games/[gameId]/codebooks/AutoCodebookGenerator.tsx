@@ -6,8 +6,8 @@ import { toast } from "sonner";
 import { COLOR_PRESETS } from "./[codebookId]/CodeManager";
 import { PLAYTIME_TIERS } from "@/lib/playtimeTiers";
 import { ReviewPicker } from "./ReviewPicker";
-import { sampleReviewsForCodebook } from "@/lib/localDb/queries/reviews";
-import { createCodebookWithCodes } from "@/lib/localDb/queries/codebooks";
+import { sampleReviewsForCodebook, sampleReviewsAcrossGames } from "@/lib/localDb/queries/reviews";
+import { createCodebookWithCodes, createCodebookWithCodesForProject } from "@/lib/localDb/queries/codebooks";
 import { RateLimitQuotaBar } from "@/components/RateLimitQuotaBar";
 import {
   parseRateLimitHeaders,
@@ -59,14 +59,16 @@ interface SavedSample {
   query: string;
 }
 
+export type GeneratorScope =
+  | { type: "game"; gameId: string; gameName: string }
+  | { type: "project"; projectId: string; games: { id: string; name: string }[] };
+
 export function AutoCodebookGenerator({
-  gameId,
-  gameName,
+  scope,
   languages,
   savedSamples,
 }: {
-  gameId: string;
-  gameName: string;
+  scope: GeneratorScope;
   languages: { language: string; count: number }[];
   savedSamples: SavedSample[];
 }) {
@@ -77,6 +79,7 @@ export function AutoCodebookGenerator({
   const [sampleSize, setSampleSize] = useState(40);
   const [ratio, setRatio] = useState(50);
   const [sampleMode, setSampleMode] = useState<"helpful" | "random">("helpful");
+  const [distribution, setDistribution] = useState<"equal" | "proportional">("equal");
   const [targetCount, setTargetCount] = useState(8);
   const [filters, setFilters] = useState<CriteriaFilters>(EMPTY_FILTERS);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -127,8 +130,7 @@ export function AutoCodebookGenerator({
     setProposals(null);
     try {
       const clampedSampleSize = Math.min(Math.max(sampleSize, MIN_SAMPLE_SIZE), MAX_SAMPLE_SIZE);
-      const reviewTexts = await sampleReviewsForCodebook({
-        gameId,
+      const sampleOptions = {
         filters:
           mode === "handpick"
             ? {}
@@ -139,12 +141,25 @@ export function AutoCodebookGenerator({
         sampleMode,
         maxSampleSize: MAX_SAMPLE_SIZE,
         minReviewTextLength: MIN_REVIEW_TEXT_LENGTH,
-      });
+      };
+      const reviewTexts =
+        scope.type === "game"
+          ? await sampleReviewsForCodebook({ gameId: scope.gameId, ...sampleOptions })
+          : await sampleReviewsAcrossGames({
+              gameIds: scope.games.map((g) => g.id),
+              mode: distribution,
+              ...sampleOptions,
+            });
 
-      const res = await fetch(`/api/games/${gameId}/suggest-codebook`, {
+      const endpoint =
+        scope.type === "game"
+          ? `/api/games/${scope.gameId}/suggest-codebook`
+          : `/api/projects/${scope.projectId}/suggest-codebook`;
+      const contextName = scope.type === "game" ? scope.gameName : scope.games.map((g) => g.name).join(", ");
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reviewTexts, gameName, focus: focus || undefined, targetCount }),
+        body: JSON.stringify({ reviewTexts, gameName: contextName, focus: focus || undefined, targetCount }),
       });
       const rateLimitQuota = parseRateLimitHeaders(res);
       if (rateLimitQuota) setQuota(rateLimitQuota);
@@ -189,15 +204,19 @@ export function AutoCodebookGenerator({
     setCreating(true);
     setError(null);
     try {
-      const created = await createCodebookWithCodes(
-        gameId,
-        codebookName,
-        selected.map(({ label, description, color }) => ({ label, description, color })),
-      );
+      const codeInputs = selected.map(({ label, description, color }) => ({ label, description, color }));
+      const created =
+        scope.type === "game"
+          ? await createCodebookWithCodes(scope.gameId, codebookName, codeInputs)
+          : await createCodebookWithCodesForProject(scope.projectId, codebookName, codeInputs);
       toast.success(`Created "${created.name}" with ${selected.length} code(s)`);
       setOpen(false);
       setProposals(null);
-      router.push(`/games/${gameId}/codebooks/${created.id}`);
+      router.push(
+        scope.type === "game"
+          ? `/games/${scope.gameId}/codebooks/${created.id}`
+          : `/projects/${scope.projectId}/codebooks/${created.id}`,
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : "Something went wrong";
       setError(message);
@@ -428,9 +447,28 @@ export function AutoCodebookGenerator({
             )}
           </div>
 
+          {scope.type === "project" && mode === "auto" && (
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="font-medium">Sample across games</span>
+              <select
+                value={distribution}
+                onChange={(e) => setDistribution(e.target.value as "equal" | "proportional")}
+                className="rounded border border-gray-300 px-2 py-1"
+              >
+                <option value="equal">Equally — same number of reviews from each game</option>
+                <option value="proportional">Proportionally — weighted by each game&apos;s review count</option>
+              </select>
+            </label>
+          )}
+
           {mode === "handpick" && (
             <ReviewPicker
-              gameId={gameId}
+              gameId={scope.type === "game" ? scope.gameId : scope.games.map((g) => g.id)}
+              gameNames={
+                scope.type === "project"
+                  ? Object.fromEntries(scope.games.map((g) => [g.id, g.name]))
+                  : undefined
+              }
               filters={filters}
               selectedIds={selectedIds}
               onToggle={toggleSelected}
