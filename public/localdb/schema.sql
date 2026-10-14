@@ -87,11 +87,13 @@ CREATE TABLE IF NOT EXISTS "Codebook" (
   "projectId" TEXT REFERENCES "Project"("id") ON DELETE CASCADE,
   "name" TEXT NOT NULL,
   "version" INTEGER NOT NULL DEFAULT 1,
+  "previousVersionId" TEXT REFERENCES "Codebook"("id") ON DELETE SET NULL,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT "Codebook_scope_check" CHECK (("gameId" IS NOT NULL) <> ("projectId" IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS "Codebook_gameId_idx" ON "Codebook"("gameId");
 CREATE INDEX IF NOT EXISTS "Codebook_projectId_idx" ON "Codebook"("projectId");
+CREATE INDEX IF NOT EXISTS "Codebook_previousVersionId_idx" ON "Codebook"("previousVersionId");
 
 CREATE TABLE IF NOT EXISTS "Code" (
   "id" TEXT PRIMARY KEY,

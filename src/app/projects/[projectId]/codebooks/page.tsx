@@ -78,7 +78,9 @@ export default function ProjectCodebooksPage() {
               href={`/projects/${projectId}/codebooks/${cb.id}`}
               className="flex items-center justify-between rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-2 text-sm hover:border-gray-400"
             >
-              <span>{cb.name}</span>
+              <span>
+                {cb.name} <span className="text-xs text-gray-400">v{cb.version}</span>
+              </span>
               <span className="text-gray-500">
                 {cb.codeCount} code{cb.codeCount === 1 ? "" : "s"}
               </span>

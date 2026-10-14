@@ -1,4 +1,5 @@
 import { getDb, newId } from "../client";
+import { listCodesForCodebook } from "./codes";
 
 export interface Codebook {
   id: string;
@@ -6,6 +7,7 @@ export interface Codebook {
   projectId: string | null;
   name: string;
   version: number;
+  previousVersionId: string | null;
   createdAt: string;
 }
 
@@ -95,6 +97,50 @@ export async function createCodebookWithCodes(
   });
   const created = await getCodebookById(codebookId);
   return created!;
+}
+
+// Revises a codebook by copying it forward into a new row rather than
+// editing in place — the old codebook's codes, taggings, and rejected
+// suggestions stay untouched, so reliability history stays attached to the
+// version that earned it (see README's "versioned, not edited-in-place").
+// listCodesForCodebook orders by createdAt ASC, so a code's parent always
+// appears before it — the old-id -> new-id map is always populated by the
+// time a child code needs its remapped parentCodeId.
+export async function reviseCodebook(codebookId: string): Promise<Codebook> {
+  const old = await getCodebookById(codebookId);
+  if (!old) throw new Error("Codebook not found");
+  const oldCodes = await listCodesForCodebook(codebookId);
+
+  const db = await getDb();
+  const newCodebookId = newId();
+  await db.transaction(async (tx) => {
+    await tx.query(
+      `INSERT INTO "Codebook" ("id", "gameId", "projectId", "name", "version", "previousVersionId")
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [newCodebookId, old.gameId, old.projectId, old.name, old.version + 1, old.id],
+    );
+    const idMap = new Map<string, string>();
+    for (const code of oldCodes) {
+      const newCodeId = newId();
+      idMap.set(code.id, newCodeId);
+      const newParentId = code.parentCodeId ? (idMap.get(code.parentCodeId) ?? null) : null;
+      await tx.query(
+        `INSERT INTO "Code" ("id", "codebookId", "label", "description", "color", "parentCodeId")
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [newCodeId, newCodebookId, code.label, code.description, code.color, newParentId],
+      );
+    }
+  });
+  const created = await getCodebookById(newCodebookId);
+  return created!;
+}
+
+export async function getNextVersionCodebook(codebookId: string): Promise<Codebook | null> {
+  const db = await getDb();
+  const result = await db.query<Codebook>(`SELECT * FROM "Codebook" WHERE "previousVersionId" = $1`, [
+    codebookId,
+  ]);
+  return result.rows[0] ?? null;
 }
 
 // Same shape as createCodebookWithCodes, scoped to a project instead of a

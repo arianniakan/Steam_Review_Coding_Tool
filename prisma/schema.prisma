@@ -141,11 +141,19 @@ model Codebook {
   version   Int      @default(1)
   createdAt DateTime @default(now())
 
+  // Revising a codebook copies it forward into a new row (see
+  // reviseCodebook) rather than editing in place, so existing reliability
+  // history stays attached to the version that earned it.
+  previousVersionId String?
+  previousVersion   Codebook?  @relation("CodebookVersionChain", fields: [previousVersionId], references: [id])
+  revisions         Codebook[] @relation("CodebookVersionChain")
+
   codes               Code[]
   rejectedSuggestions RejectedSuggestion[]
 
   @@index([gameId])
   @@index([projectId])
+  @@index([previousVersionId])
 }
 
 model Code {
