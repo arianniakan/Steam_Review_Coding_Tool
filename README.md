@@ -72,6 +72,7 @@ Only one environment variable is required:
 | `OPENAI_API_KEY` | `.env.local` | AI-assisted code suggestions and codebook drafting |
 | `OPENAI_MODEL` | `.env.local` (optional) | Defaults to `gpt-4o-mini` |
 | `KV_REST_API_URL` / `KV_REST_API_TOKEN` | `.env.local` (optional) | Enables rate limiting; without them the app runs fine locally with rate limiting simply disabled |
+| `RATE_LIMIT_SUGGEST_CODES_LIMIT` / `RATE_LIMIT_SUGGEST_CODEBOOK_LIMIT` | `.env.local` (optional) | Overrides the default per-hour request budgets (20 / 5) set in `src/lib/rateLimit.ts`. Only relevant if `KV_REST_API_URL`/`KV_REST_API_TOKEN` are also set — intended for a private, non-public deployment (e.g. for actual research use) that wants Redis-backed protection against runaway bugs without being capped at the public demo's conservative numbers |
 
 No database setup needed — PGlite bootstraps its own schema (`public/localdb/schema.sql`) in the browser on first load.
 
