@@ -120,6 +120,25 @@ CREATE INDEX IF NOT EXISTS "Tagging_reviewId_idx" ON "Tagging"("reviewId");
 CREATE INDEX IF NOT EXISTS "Tagging_codeId_idx" ON "Tagging"("codeId");
 CREATE INDEX IF NOT EXISTS "Tagging_coderId_idx" ON "Tagging"("coderId");
 
+-- A rejected AI suggestion — the human disagreed with the model. Accepted
+-- suggestions need no separate table (they become a Tagging with
+-- coderKind=AI); this is what preserves the disagreement signal that would
+-- otherwise be discarded client-side.
+CREATE TABLE IF NOT EXISTS "RejectedSuggestion" (
+  "id" TEXT PRIMARY KEY,
+  "reviewId" TEXT NOT NULL REFERENCES "Review"("id") ON DELETE CASCADE,
+  "codebookId" TEXT NOT NULL REFERENCES "Codebook"("id") ON DELETE CASCADE,
+  "codeId" TEXT NOT NULL REFERENCES "Code"("id") ON DELETE CASCADE,
+  "spanStart" INTEGER,
+  "spanEnd" INTEGER,
+  "spanText" TEXT NOT NULL,
+  "aiConfidence" DOUBLE PRECISION NOT NULL,
+  "aiRationale" TEXT NOT NULL,
+  "rejectedAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS "RejectedSuggestion_reviewId_idx" ON "RejectedSuggestion"("reviewId");
+CREATE INDEX IF NOT EXISTS "RejectedSuggestion_codebookId_idx" ON "RejectedSuggestion"("codebookId");
+
 CREATE TABLE IF NOT EXISTS "Event" (
   "id" TEXT PRIMARY KEY,
   "gameId" TEXT NOT NULL REFERENCES "Game"("id") ON DELETE CASCADE,

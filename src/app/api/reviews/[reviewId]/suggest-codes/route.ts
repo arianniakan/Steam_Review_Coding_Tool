@@ -57,13 +57,18 @@ export async function POST(request: Request) {
     );
   }
 
-  const codebookDescription = codes.map((c) => `- ${c.label}: ${c.description}`).join("\n");
+  // Alphabetical order so the model's highest-probability token isn't
+  // skewed by creation order, per standard prompt-engineering guidance for
+  // categorical options (Törnberg 2024).
+  const sortedCodes = [...codes].sort((a, b) => a.label.localeCompare(b.label));
+  const codebookDescription = sortedCodes.map((c) => `- ${c.label}: ${c.description}`).join("\n");
 
   let raw: { suggestions: RawSuggestion[] };
   try {
     const completion = await openai.chat.completions.create({
       model: OPENAI_MODEL,
       max_tokens: 2000,
+      temperature: 0,
       messages: [
         {
           role: "system",
@@ -95,7 +100,7 @@ export async function POST(request: Request) {
                 items: {
                   type: "object",
                   properties: {
-                    codeLabel: { type: "string", enum: codes.map((c) => c.label) },
+                    codeLabel: { type: "string", enum: sortedCodes.map((c) => c.label) },
                     spanText: {
                       type: "string",
                       description: "Exact verbatim substring of the review text",

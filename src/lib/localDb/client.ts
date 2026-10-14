@@ -17,40 +17,71 @@ let dbPromise: Promise<PGlite> | null = null;
 // connect (fresh bootstrap, loaded dump, or long-existing browser alike),
 // gated on its own idempotency check, so later schema additions land
 // everywhere without needing a real migration runner.
+// Each migration step is gated on its own idempotency check and runs
+// independently — a browser that already has the Project/ProjectGame
+// migration but not the RejectedSuggestion one (or vice versa) must still
+// pick up whichever it's missing, so these can't share one early-return gate.
+async function tableExists(db: PGlite, tableName: string): Promise<boolean> {
+  const result = await db.query<{ exists: boolean }>(
+    `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = $1) AS exists`,
+    [tableName],
+  );
+  return result.rows[0]?.exists ?? false;
+}
+
 async function runMigrations(db: PGlite): Promise<void> {
-  const check = await db.query<{ exists: boolean }>(
+  const hasProjects = await db.query<{ exists: boolean }>(
     `SELECT EXISTS (
        SELECT FROM information_schema.columns
        WHERE table_name = 'Codebook' AND column_name = 'projectId'
      ) AS exists`,
   );
-  if (check.rows[0]?.exists) return;
+  if (!hasProjects.rows[0]?.exists) {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS "Project" (
+        "id" TEXT PRIMARY KEY,
+        "name" TEXT NOT NULL,
+        "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
 
-  await db.exec(`
-    CREATE TABLE IF NOT EXISTS "Project" (
-      "id" TEXT PRIMARY KEY,
-      "name" TEXT NOT NULL,
-      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
-    );
+      CREATE TABLE IF NOT EXISTS "ProjectGame" (
+        "projectId" TEXT NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
+        "gameId" TEXT NOT NULL REFERENCES "Game"("id") ON DELETE CASCADE,
+        "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+        PRIMARY KEY ("projectId", "gameId")
+      );
+      CREATE INDEX IF NOT EXISTS "ProjectGame_gameId_idx" ON "ProjectGame"("gameId");
 
-    CREATE TABLE IF NOT EXISTS "ProjectGame" (
-      "projectId" TEXT NOT NULL REFERENCES "Project"("id") ON DELETE CASCADE,
-      "gameId" TEXT NOT NULL REFERENCES "Game"("id") ON DELETE CASCADE,
-      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY ("projectId", "gameId")
-    );
-    CREATE INDEX IF NOT EXISTS "ProjectGame_gameId_idx" ON "ProjectGame"("gameId");
+      ALTER TABLE "Codebook" ALTER COLUMN "gameId" DROP NOT NULL;
+      ALTER TABLE "Codebook" ADD COLUMN IF NOT EXISTS "projectId" TEXT REFERENCES "Project"("id") ON DELETE CASCADE;
+      CREATE INDEX IF NOT EXISTS "Codebook_projectId_idx" ON "Codebook"("projectId");
 
-    ALTER TABLE "Codebook" ALTER COLUMN "gameId" DROP NOT NULL;
-    ALTER TABLE "Codebook" ADD COLUMN IF NOT EXISTS "projectId" TEXT REFERENCES "Project"("id") ON DELETE CASCADE;
-    CREATE INDEX IF NOT EXISTS "Codebook_projectId_idx" ON "Codebook"("projectId");
+      DO $mig$ BEGIN
+        ALTER TABLE "Codebook" ADD CONSTRAINT "Codebook_scope_check"
+          CHECK (("gameId" IS NOT NULL) <> ("projectId" IS NOT NULL));
+      EXCEPTION WHEN duplicate_object THEN NULL;
+      END $mig$;
+    `);
+  }
 
-    DO $mig$ BEGIN
-      ALTER TABLE "Codebook" ADD CONSTRAINT "Codebook_scope_check"
-        CHECK (("gameId" IS NOT NULL) <> ("projectId" IS NOT NULL));
-    EXCEPTION WHEN duplicate_object THEN NULL;
-    END $mig$;
-  `);
+  if (!(await tableExists(db, "RejectedSuggestion"))) {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS "RejectedSuggestion" (
+        "id" TEXT PRIMARY KEY,
+        "reviewId" TEXT NOT NULL REFERENCES "Review"("id") ON DELETE CASCADE,
+        "codebookId" TEXT NOT NULL REFERENCES "Codebook"("id") ON DELETE CASCADE,
+        "codeId" TEXT NOT NULL REFERENCES "Code"("id") ON DELETE CASCADE,
+        "spanStart" INTEGER,
+        "spanEnd" INTEGER,
+        "spanText" TEXT NOT NULL,
+        "aiConfidence" DOUBLE PRECISION NOT NULL,
+        "aiRationale" TEXT NOT NULL,
+        "rejectedAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS "RejectedSuggestion_reviewId_idx" ON "RejectedSuggestion"("reviewId");
+      CREATE INDEX IF NOT EXISTS "RejectedSuggestion_codebookId_idx" ON "RejectedSuggestion"("codebookId");
+    `);
+  }
 }
 
 async function createClient(loadDataDir?: Blob | File): Promise<PGlite> {

@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { exportCodebookCsv } from "@/lib/localDb/csvExport";
+import { countDisagreementsForCodebook } from "@/lib/localDb/queries/rejectedSuggestions";
 import {
   setStoredActiveCodebookId,
   setStoredActiveProjectCodebookId,
@@ -35,9 +37,25 @@ export function CodebookToolbar({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [disagreementCount, setDisagreementCount] = useState(0);
 
   const basePath = scope.type === "game" ? `/games/${scope.gameId}` : `/projects/${scope.projectId}`;
   const noCodebooksLabel = scope.type === "game" ? "this game" : "this project";
+  const effectiveActiveId = activeCodebookId ?? codebooks[0]?.id;
+
+  useEffect(() => {
+    // No active codebook means codebooks.length === 0, which short-circuits
+    // to the "no codebooks yet" return below before this count is ever
+    // rendered — nothing to reset.
+    if (!effectiveActiveId) return;
+    let cancelled = false;
+    countDisagreementsForCodebook(effectiveActiveId).then((count) => {
+      if (!cancelled) setDisagreementCount(count);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveActiveId]);
 
   if (codebooks.length === 0) {
     return (
@@ -98,6 +116,12 @@ export function CodebookToolbar({
       {/* Results for the selected codebook — a distinct group, not more
           options in the same row as the selector above */}
       <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
+        <Link
+          href={`${basePath}/codebooks/${active.id}/disagreements`}
+          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
+        >
+          Disagreements{disagreementCount > 0 ? ` (${disagreementCount})` : ""}
+        </Link>
         <Link
           href={`${basePath}/codebooks/${active.id}/analytics`}
           className="rounded-lg border border-gray-900 px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
