@@ -5,6 +5,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { cohensKappa, interpretKappa } from "@/lib/kappa";
 import { runIndependentAiPass } from "@/lib/independentAiPass";
+import { markAiAttempted } from "@/lib/localDb/queries/training";
 import type { Code } from "@/lib/localDb/queries/codes";
 import type { TaggingForAnalytics } from "@/lib/localDb/queries/taggings";
 
@@ -13,20 +14,28 @@ export interface BucketReview {
   reviewId: string;
   reviewText: string;
   reviewGameId?: string;
+  aiAttemptedAt?: string | null;
 }
 
 // Shared by both the calibration and test bucket panels (and both the
 // game- and project-scoped training pages) — the blind-tag -> independent-AI
 // -> compare pattern is identical for every held-out bucket, only the data
 // and step numbers differ.
+//
+// "aiAttemptedIds" (not just "has an AI Tagging row") drives readiness and
+// the mismatch set: the independent AI pass can legitimately find zero
+// applicable codes, which writes no Tagging row at all — without tracking
+// the attempt itself, that review would look indistinguishable from "never
+// run" and could never be counted as done.
 export function computeBucketStats(reviews: BucketReview[], taggings: TaggingForAnalytics[], codes: Code[]) {
   const humanCodedIds = new Set(taggings.filter((t) => t.coderKind === "HUMAN").map((t) => t.reviewId));
   const aiCodedIds = new Set(taggings.filter((t) => t.coderKind === "AI").map((t) => t.reviewId));
+  const aiAttemptedIds = new Set([...aiCodedIds, ...reviews.filter((r) => r.aiAttemptedAt).map((r) => r.reviewId)]);
   const done = reviews.filter((r) => humanCodedIds.has(r.reviewId)).length;
-  const readyForAiPass = reviews.filter((r) => humanCodedIds.has(r.reviewId) && !aiCodedIds.has(r.reviewId));
+  const readyForAiPass = reviews.filter((r) => humanCodedIds.has(r.reviewId) && !aiAttemptedIds.has(r.reviewId));
 
   const mismatches = reviews
-    .filter((r) => aiCodedIds.has(r.reviewId))
+    .filter((r) => aiAttemptedIds.has(r.reviewId))
     .map((r) => {
       const humanCodes = new Set(
         taggings.filter((t) => t.reviewId === r.reviewId && t.coderKind === "HUMAN").map((t) => t.codeId),
@@ -39,7 +48,7 @@ export function computeBucketStats(reviews: BucketReview[], taggings: TaggingFor
     });
 
   const pairs = reviews
-    .filter((r) => humanCodedIds.has(r.reviewId) && aiCodedIds.has(r.reviewId))
+    .filter((r) => humanCodedIds.has(r.reviewId) && aiAttemptedIds.has(r.reviewId))
     .flatMap((r) =>
       codes.map((code) => ({
         humanPresent: taggings.some(
@@ -50,10 +59,11 @@ export function computeBucketStats(reviews: BucketReview[], taggings: TaggingFor
     );
   const reliability = pairs.length > 0 ? cohensKappa(pairs) : null;
 
-  return { humanCodedIds, aiCodedIds, done, readyForAiPass, mismatches, reliability };
+  return { humanCodedIds, aiCodedIds, aiAttemptedIds, done, readyForAiPass, mismatches, reliability };
 }
 
 export function TrainingBucketPanel({
+  trainingId,
   stepStart,
   bucketLabel,
   reviews,
@@ -64,6 +74,7 @@ export function TrainingBucketPanel({
   nudge,
   onChanged,
 }: {
+  trainingId: string;
   stepStart: number;
   bucketLabel: string;
   reviews: BucketReview[];
@@ -77,11 +88,8 @@ export function TrainingBucketPanel({
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
-  const { humanCodedIds, aiCodedIds, done, readyForAiPass, mismatches, reliability } = computeBucketStats(
-    reviews,
-    taggings,
-    codes,
-  );
+  const { humanCodedIds, aiCodedIds, aiAttemptedIds, done, readyForAiPass, mismatches, reliability } =
+    computeBucketStats(reviews, taggings, codes);
 
   async function handleRunAiPass() {
     setRunning(true);
@@ -91,7 +99,13 @@ export function TrainingBucketPanel({
     for (let i = 0; i < readyForAiPass.length; i++) {
       const r = readyForAiPass[i]!;
       const result = await runIndependentAiPass(r.reviewId, r.reviewText, codeInputs);
-      if (result.error) failed++;
+      if (result.error) {
+        failed++;
+      } else {
+        // Mark attempted even when zero codes were suggested — that's a
+        // real (and comparable) AI judgment, not a missing run.
+        await markAiAttempted(trainingId, r.reviewId);
+      }
       setProgress({ done: i + 1, total: readyForAiPass.length });
     }
     setRunning(false);
@@ -126,7 +140,11 @@ export function TrainingBucketPanel({
               <p className="line-clamp-1 flex-1 text-gray-600">{r.reviewText.slice(0, gameNames ? 80 : 100)}</p>
               <span className="shrink-0 text-xs text-gray-500">
                 {humanCodedIds.has(r.reviewId) ? "✓ tagged" : "not yet"}
-                {aiCodedIds.has(r.reviewId) ? " · AI coded" : ""}
+                {aiCodedIds.has(r.reviewId)
+                  ? " · AI coded"
+                  : aiAttemptedIds.has(r.reviewId)
+                    ? " · AI: no codes"
+                    : ""}
               </span>
               <Link href={tagHrefFor(r.reviewId)} className="shrink-0 text-xs underline">
                 {humanCodedIds.has(r.reviewId) ? "Review" : "Tag"} →

@@ -130,6 +130,16 @@ async function runMigrations(db: PGlite): Promise<void> {
       CREATE INDEX IF NOT EXISTS "ReviewSplitAssignment_reviewId_idx" ON "ReviewSplitAssignment"("reviewId");
     `);
   }
+
+  // "aiAttemptedAt" distinguishes "the independent AI pass ran and found
+  // zero applicable codes" from "never ran" — without it, a review the
+  // model genuinely judges code-less is indistinguishable from one that
+  // was never attempted, since neither has a Tagging row.
+  if (!(await columnExists(db, "ReviewSplitAssignment", "aiAttemptedAt"))) {
+    await db.exec(`
+      ALTER TABLE "ReviewSplitAssignment" ADD COLUMN IF NOT EXISTS "aiAttemptedAt" TIMESTAMPTZ;
+    `);
+  }
 }
 
 async function createClient(loadDataDir?: Blob | File): Promise<PGlite> {

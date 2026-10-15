@@ -25,7 +25,7 @@ export default function CodebookDetailPage() {
   const [codebook, setCodebook] = useState<Codebook | null>(null);
   const [codes, setCodes] = useState<Code[]>([]);
   const [nextVersion, setNextVersion] = useState<Codebook | null>(null);
-  const [locked, setLocked] = useState(false);
+  const [trainingPhase, setTrainingPhase] = useState<string | null>(null);
   const [revising, setRevising] = useState(false);
 
   useEffect(() => {
@@ -49,7 +49,7 @@ export default function CodebookDetailPage() {
       setCodebook(cb);
       setCodes(cds);
       setNextVersion(next);
-      setLocked(training?.phase === "locked" || training?.phase === "verified");
+      setTrainingPhase(training?.phase ?? null);
       setLoading(false);
     })();
     return () => {
@@ -121,7 +121,11 @@ export default function CodebookDetailPage() {
           >
             A newer version (v{nextVersion.version}) exists →
           </Link>
-        ) : locked ? (
+        ) : trainingPhase === "verified" ? (
+          <span className="shrink-0 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-sm text-green-800">
+            Verified ✓
+          </span>
+        ) : trainingPhase === "locked" ? (
           <span className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
             Locked for validation
           </span>
@@ -147,7 +151,11 @@ export default function CodebookDetailPage() {
       </div>
 
       <div className="mt-6">
-        <CodeManager codebookId={codebookId} codes={codes} locked={locked} />
+        <CodeManager
+          codebookId={codebookId}
+          codes={codes}
+          locked={trainingPhase === "locked" || trainingPhase === "verified"}
+        />
       </div>
     </main>
   );

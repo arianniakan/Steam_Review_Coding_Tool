@@ -194,6 +194,7 @@ model ReviewSplitAssignment {
   review     Review           @relation(fields: [reviewId], references: [id], onDelete: Cascade)
   bucket     String // calibration|test|verification
   assignedAt DateTime         @default(now())
+  aiAttemptedAt DateTime? // set once the independent AI pass has run, even if it found zero codes
 
   @@unique([trainingId, reviewId])
 }

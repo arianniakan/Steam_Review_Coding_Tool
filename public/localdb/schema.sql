@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS "ReviewSplitAssignment" (
   "reviewId" TEXT NOT NULL REFERENCES "Review"("id") ON DELETE CASCADE,
   "bucket" TEXT NOT NULL,
   "assignedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+  "aiAttemptedAt" TIMESTAMPTZ,
   UNIQUE ("trainingId", "reviewId")
 );
 CREATE INDEX IF NOT EXISTS "ReviewSplitAssignment_trainingId_idx" ON "ReviewSplitAssignment"("trainingId");

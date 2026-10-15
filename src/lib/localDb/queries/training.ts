@@ -157,12 +157,13 @@ export interface SplitReviewRow {
   bucket: SplitBucket;
   reviewText: string;
   reviewGameId: string;
+  aiAttemptedAt: string | null;
 }
 
 export async function listSplitAssignments(trainingId: string, bucket: SplitBucket): Promise<SplitReviewRow[]> {
   const db = await getDb();
   const result = await db.query<SplitReviewRow>(
-    `SELECT rsa."id", rsa."reviewId", rsa."bucket", r."text" AS "reviewText", r."gameId" AS "reviewGameId"
+    `SELECT rsa."id", rsa."reviewId", rsa."bucket", rsa."aiAttemptedAt", r."text" AS "reviewText", r."gameId" AS "reviewGameId"
      FROM "ReviewSplitAssignment" rsa
      JOIN "Review" r ON r."id" = rsa."reviewId"
      WHERE rsa."trainingId" = $1 AND rsa."bucket" = $2
@@ -170,6 +171,17 @@ export async function listSplitAssignments(trainingId: string, bucket: SplitBuck
     [trainingId, bucket],
   );
   return result.rows;
+}
+
+// Marks that the independent AI pass has run for this review, regardless of
+// how many (if any) codes it suggested — see the "aiAttemptedAt" migration
+// note in client.ts for why this can't be inferred from Tagging rows alone.
+export async function markAiAttempted(trainingId: string, reviewId: string): Promise<void> {
+  const db = await getDb();
+  await db.query(
+    `UPDATE "ReviewSplitAssignment" SET "aiAttemptedAt" = now() WHERE "trainingId" = $1 AND "reviewId" = $2`,
+    [trainingId, reviewId],
+  );
 }
 
 export async function countSplitAssignmentsByBucket(trainingId: string): Promise<Record<SplitBucket, number>> {

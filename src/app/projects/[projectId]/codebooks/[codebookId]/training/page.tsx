@@ -7,11 +7,13 @@ import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
 import {
   TrainingBucketPanel,
+  computeBucketStats,
   type BucketReview,
 } from "@/app/games/[gameId]/codebooks/[codebookId]/training/TrainingBucketPanel";
 import { getCodebookById, reviseCodebook, type Codebook } from "@/lib/localDb/queries/codebooks";
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { listGamesForProject } from "@/lib/localDb/queries/projects";
+import { interpretKappa } from "@/lib/kappa";
 import {
   startTraining,
   getTrainingForCodebook,
@@ -44,6 +46,7 @@ export default function ProjectTrainingPage() {
   const [counts, setCounts] = useState<Record<SplitBucket, number>>({ calibration: 0, test: 0, verification: 0 });
   const [calibrationReviews, setCalibrationReviews] = useState<BucketReview[]>([]);
   const [testReviews, setTestReviews] = useState<BucketReview[]>([]);
+  const [verificationReviews, setVerificationReviews] = useState<BucketReview[]>([]);
   const [taggings, setTaggings] = useState<TaggingForAnalytics[]>([]);
 
   const [calibrationSampleSize, setCalibrationSampleSize] = useState(DEFAULT_CALIBRATION_SIZE);
@@ -56,6 +59,7 @@ export default function ProjectTrainingPage() {
   const [revising, setRevising] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [locking, setLocking] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   async function load() {
     const cb = await getCodebookById(codebookId);
@@ -73,15 +77,17 @@ export default function ProjectTrainingPage() {
     const t = await getTrainingForCodebook(codebookId);
     setTraining(t);
     if (t) {
-      const [c, calib, test, tgs] = await Promise.all([
+      const [c, calib, test, verif, tgs] = await Promise.all([
         countSplitAssignmentsByBucket(t.id),
         listSplitAssignments(t.id, "calibration"),
         listSplitAssignments(t.id, "test"),
+        listSplitAssignments(t.id, "verification"),
         listTaggingsForCodebookAnalytics(codebookId),
       ]);
       setCounts(c);
       setCalibrationReviews(calib);
       setTestReviews(test);
+      setVerificationReviews(verif);
       setTaggings(tgs);
     }
     setLoading(false);
@@ -155,6 +161,20 @@ export default function ProjectTrainingPage() {
       toast.error(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLocking(false);
+    }
+  }
+
+  async function handleMarkVerified() {
+    if (!training) return;
+    setVerifying(true);
+    try {
+      await advanceTrainingPhase(training.id, "verified");
+      await load();
+      toast.success("Training verified — every held-out review is now available for normal tagging");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setVerifying(false);
     }
   }
 
@@ -269,7 +289,11 @@ export default function ProjectTrainingPage() {
         <h1 className="text-2xl font-semibold">
           {codebook.name} <span className="text-base font-normal text-gray-400">v{codebook.version}</span> — Training
         </h1>
-        {isLocked ? (
+        {training.phase === "verified" ? (
+          <span className="shrink-0 rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-sm text-green-800">
+            Verified ✓
+          </span>
+        ) : isLocked ? (
           <span className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
             Locked for validation
           </span>
@@ -291,6 +315,7 @@ export default function ProjectTrainingPage() {
       </p>
 
       <TrainingBucketPanel
+        trainingId={training.id}
         stepStart={1}
         bucketLabel="calibration sample"
         reviews={calibrationReviews}
@@ -324,6 +349,7 @@ export default function ProjectTrainingPage() {
 
       {training.phase !== "calibrating" && (
         <TrainingBucketPanel
+        trainingId={training.id}
           stepStart={4}
           bucketLabel="test set"
           reviews={testReviews}
@@ -353,6 +379,80 @@ export default function ProjectTrainingPage() {
           </button>
         </section>
       )}
+
+      {isLocked && (
+        <TrainingBucketPanel
+        trainingId={training.id}
+          stepStart={7}
+          bucketLabel="verification set"
+          reviews={verificationReviews}
+          taggings={taggings}
+          codes={codes}
+          tagHrefFor={(reviewId) => `/projects/${projectId}/codebooks/${codebookId}/training/tag/${reviewId}`}
+          gameNames={gameNames}
+          onChanged={load}
+        />
+      )}
+
+      {training.phase === "locked" && (() => {
+        const verifStats = computeBucketStats(verificationReviews, taggings, codes);
+        const readyToVerify =
+          counts.verification === 0 ||
+          (verifStats.readyForAiPass.length === 0 && verifStats.mismatches.length === verificationReviews.length);
+        return (
+          <section className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm p-4">
+            <h2 className="font-medium">Mark as verified</h2>
+            <p className="mt-1 text-xs text-gray-500">
+              {counts.verification === 0
+                ? "No reviews were reserved for verification, so there's no held-out score for it — you can still finalize."
+                : "Finish blind-tagging and running the AI on every verification review above before finalizing."}
+              {" "}This is the one-time final check — once verified, every held-out review rejoins the
+              normal Reviews list and becomes taggable through AI-Assisted Coding again.
+            </p>
+            <button
+              type="button"
+              onClick={handleMarkVerified}
+              disabled={verifying || !readyToVerify}
+              className="mt-3 rounded-lg bg-black px-4 py-1.5 text-sm text-white disabled:opacity-50"
+            >
+              {verifying ? "Finalizing…" : "Mark training as verified →"}
+            </button>
+          </section>
+        );
+      })()}
+
+      {training.phase === "verified" && (() => {
+        const calibStats = computeBucketStats(calibrationReviews, taggings, codes);
+        const testStats = computeBucketStats(testReviews, taggings, codes);
+        const verifStats = computeBucketStats(verificationReviews, taggings, codes);
+        const rows: { label: string; count: number; kappa: number | null | undefined }[] = [
+          { label: "Calibration", count: calibrationReviews.length, kappa: calibStats.reliability?.kappa },
+          { label: "Test", count: testReviews.length, kappa: testStats.reliability?.kappa },
+          { label: "Verification", count: verificationReviews.length, kappa: verifStats.reliability?.kappa },
+        ];
+        return (
+          <section className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm p-4">
+            <h2 className="font-medium">Final split summary</h2>
+            <p className="mt-1 text-xs text-gray-500">The full progression of this training, now that it&apos;s verified.</p>
+            <ul className="mt-3 flex flex-col gap-2 text-sm">
+              {rows.map((r) => (
+                <li key={r.label} className="flex items-center justify-between rounded-lg border border-gray-100 p-2">
+                  <span>
+                    {r.label} <span className="text-xs text-gray-500">({r.count} review(s))</span>
+                  </span>
+                  <span className="text-xs text-gray-600">
+                    {r.kappa === undefined
+                      ? "no comparison yet"
+                      : r.kappa === null
+                        ? "κ undefined (perfect agreement, no variance)"
+                        : `κ = ${r.kappa.toFixed(3)} (${interpretKappa(r.kappa)})`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })()}
     </main>
   );
 }
