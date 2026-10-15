@@ -29,6 +29,16 @@ async function tableExists(db: PGlite, tableName: string): Promise<boolean> {
   return result.rows[0]?.exists ?? false;
 }
 
+async function columnExists(db: PGlite, tableName: string, columnName: string): Promise<boolean> {
+  const result = await db.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT FROM information_schema.columns WHERE table_name = $1 AND column_name = $2
+     ) AS exists`,
+    [tableName, columnName],
+  );
+  return result.rows[0]?.exists ?? false;
+}
+
 async function runMigrations(db: PGlite): Promise<void> {
   const hasProjects = await db.query<{ exists: boolean }>(
     `SELECT EXISTS (
@@ -80,6 +90,13 @@ async function runMigrations(db: PGlite): Promise<void> {
       );
       CREATE INDEX IF NOT EXISTS "RejectedSuggestion_reviewId_idx" ON "RejectedSuggestion"("reviewId");
       CREATE INDEX IF NOT EXISTS "RejectedSuggestion_codebookId_idx" ON "RejectedSuggestion"("codebookId");
+    `);
+  }
+
+  if (!(await columnExists(db, "Codebook", "previousVersionId"))) {
+    await db.exec(`
+      ALTER TABLE "Codebook" ADD COLUMN IF NOT EXISTS "previousVersionId" TEXT REFERENCES "Codebook"("id") ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS "Codebook_previousVersionId_idx" ON "Codebook"("previousVersionId");
     `);
   }
 }
