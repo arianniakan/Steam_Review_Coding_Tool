@@ -77,7 +77,8 @@ model Review {
 
   createdAt DateTime @default(now())
 
-  taggings Tagging[]
+  taggings            Tagging[]
+  rejectedSuggestions RejectedSuggestion[]
 
   @@index([gameId])
   @@index([gameId, votedUp])
@@ -140,7 +141,8 @@ model Codebook {
   version   Int      @default(1)
   createdAt DateTime @default(now())
 
-  codes Code[]
+  codes               Code[]
+  rejectedSuggestions RejectedSuggestion[]
 
   @@index([gameId])
   @@index([projectId])
@@ -158,7 +160,8 @@ model Code {
   childCodes   Code[]   @relation("CodeHierarchy")
   createdAt    DateTime @default(now())
 
-  taggings Tagging[]
+  taggings            Tagging[]
+  rejectedSuggestions RejectedSuggestion[]
 
   @@unique([codebookId, label])
 }
@@ -181,6 +184,29 @@ model Tagging {
   @@index([reviewId])
   @@index([codeId])
   @@index([coderId])
+}
+
+// A rejected AI suggestion — the human disagreed with the model. Accepted
+// suggestions need no separate table (they become a Tagging with
+// coderKind=AI); this preserves the disagreement signal that would
+// otherwise be discarded client-side, powering the disagreement queue.
+model RejectedSuggestion {
+  id           String   @id @default(cuid())
+  reviewId     String
+  review       Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  codebookId   String
+  codebook     Codebook @relation(fields: [codebookId], references: [id], onDelete: Cascade)
+  codeId       String
+  code         Code     @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  spanStart    Int?
+  spanEnd      Int?
+  spanText     String
+  aiConfidence Float
+  aiRationale  String
+  rejectedAt   DateTime @default(now())
+
+  @@index([reviewId])
+  @@index([codebookId])
 }
 
 // Patch releases, controversies, review-bomb dates — overlaid on the

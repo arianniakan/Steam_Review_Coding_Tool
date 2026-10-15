@@ -62,6 +62,7 @@ export async function handleSuggestCodebook(request: Request): Promise<Response>
     const completion = await openai.chat.completions.create({
       model: OPENAI_MODEL,
       max_tokens: 4000,
+      temperature: 0,
       messages: [
         {
           role: "system",

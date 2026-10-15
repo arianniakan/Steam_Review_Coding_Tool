@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { buildHighlightSegments } from "@/lib/highlightSpans";
 import { createTagging, deleteTagging } from "@/lib/localDb/queries/taggings";
 import { getDefaultResearcher, getAiCoder } from "@/lib/localDb/queries/coders";
+import { createRejectedSuggestion } from "@/lib/localDb/queries/rejectedSuggestions";
 import { RateLimitQuotaBar } from "@/components/RateLimitQuotaBar";
 import {
   parseRateLimitHeaders,
@@ -97,6 +98,7 @@ function toTaggingView(t: {
 export function TagEditor({
   reviewId,
   reviewText,
+  codebookId,
   codes,
   initialTaggings,
 }: {
@@ -256,7 +258,24 @@ export function TagEditor({
     }
   }
 
-  function handleRejectSuggestion(s: Suggestion) {
+  // Persisted (not just dropped from local state) so a disagreement queue
+  // can surface every point where the researcher overrode the model —
+  // central to the paper's "examine points of disagreement" step.
+  async function handleRejectSuggestion(s: Suggestion) {
+    try {
+      await createRejectedSuggestion({
+        reviewId,
+        codebookId,
+        codeId: s.codeId,
+        spanStart: s.spanStart,
+        spanEnd: s.spanEnd,
+        spanText: s.spanText,
+        aiConfidence: s.confidence,
+        aiRationale: s.rationale,
+      });
+    } catch (err) {
+      console.error("Failed to record rejected suggestion", err);
+    }
     setSuggestions((prev) => prev.filter((x) => suggestionKey(x) !== suggestionKey(s)));
     toast(`Rejected "${s.codeLabel}"`);
   }
