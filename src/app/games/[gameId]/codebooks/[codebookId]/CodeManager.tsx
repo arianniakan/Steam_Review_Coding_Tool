@@ -136,9 +136,11 @@ const EMPTY_FORM: CodeFormValues = {
 export function CodeManager({
   codebookId,
   codes: initialCodes,
+  locked = false,
 }: {
   codebookId: string;
   codes: CodeRow[];
+  locked?: boolean;
 }) {
   const [codes, setCodes] = useState<CodeRow[]>(initialCodes);
   const [form, setForm] = useState<CodeFormValues>(EMPTY_FORM);
@@ -240,6 +242,12 @@ export function CodeManager({
 
   return (
     <div>
+      {locked && (
+        <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+          This codebook is locked for validation — codes can&apos;t be added, edited, or deleted.
+          Start a fresh training to make further changes.
+        </p>
+      )}
       <ul className="flex flex-col gap-2">
         {codes.map((code) =>
           editingId === code.id ? (
@@ -290,18 +298,20 @@ export function CodeManager({
                   <p className="text-gray-600">{code.description}</p>
                 </div>
               </div>
-              <div className="flex shrink-0 gap-3">
-                <button onClick={() => startEdit(code)} className="text-xs underline">
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(code.id, code.label)}
-                  disabled={deletingId === code.id}
-                  className="text-xs text-red-600 underline disabled:opacity-50"
-                >
-                  {deletingId === code.id ? "Deleting…" : "Delete"}
-                </button>
-              </div>
+              {!locked && (
+                <div className="flex shrink-0 gap-3">
+                  <button onClick={() => startEdit(code)} className="text-xs underline">
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(code.id, code.label)}
+                    disabled={deletingId === code.id}
+                    className="text-xs text-red-600 underline disabled:opacity-50"
+                  >
+                    {deletingId === code.id ? "Deleting…" : "Delete"}
+                  </button>
+                </div>
+              )}
             </li>
           ),
         )}
@@ -310,18 +320,20 @@ export function CodeManager({
         )}
       </ul>
 
-      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white shadow-sm p-4 text-sm">
-        <p className="font-medium">Add a code</p>
-        <CodeFormFields values={form} onChange={setForm} codes={codes} />
-        <button
-          type="submit"
-          disabled={submitting}
-          className="self-start rounded-lg bg-black px-4 py-1.5 text-white disabled:opacity-50"
-        >
-          {submitting ? "Adding…" : "Add code"}
-        </button>
-        {error && <p className="text-red-600">{error}</p>}
-      </form>
+      {!locked && (
+        <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3 rounded-xl border border-gray-200 bg-white shadow-sm p-4 text-sm">
+          <p className="font-medium">Add a code</p>
+          <CodeFormFields values={form} onChange={setForm} codes={codes} />
+          <button
+            type="submit"
+            disabled={submitting}
+            className="self-start rounded-lg bg-black px-4 py-1.5 text-white disabled:opacity-50"
+          >
+            {submitting ? "Adding…" : "Add code"}
+          </button>
+          {error && <p className="text-red-600">{error}</p>}
+        </form>
+      )}
     </div>
   );
 }

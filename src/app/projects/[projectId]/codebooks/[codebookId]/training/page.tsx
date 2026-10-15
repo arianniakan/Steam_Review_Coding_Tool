@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import { toast } from "sonner";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
-import { cohensKappa, interpretKappa } from "@/lib/kappa";
-import { runIndependentAiPass } from "@/lib/independentAiPass";
+import {
+  TrainingBucketPanel,
+  type BucketReview,
+} from "@/app/games/[gameId]/codebooks/[codebookId]/training/TrainingBucketPanel";
 import { getCodebookById, reviseCodebook, type Codebook } from "@/lib/localDb/queries/codebooks";
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { listGamesForProject } from "@/lib/localDb/queries/projects";
@@ -16,6 +17,8 @@ import {
   getTrainingForCodebook,
   listSplitAssignments,
   countSplitAssignmentsByBucket,
+  advanceTrainingPhase,
+  lockTraining,
   type CodebookTraining,
   type SplitBucket,
 } from "@/lib/localDb/queries/training";
@@ -24,6 +27,9 @@ import { listTaggingsForCodebookAnalytics, type TaggingForAnalytics } from "@/li
 const DEFAULT_CALIBRATION_SIZE = 20;
 const DEFAULT_HELD_OUT_PERCENT = 30;
 const DEFAULT_VERIFICATION_SHARE_PERCENT = 50;
+
+const TEST_NUDGE =
+  "Repeated checks against the test set erode its value as a holdout. Treat this as a near-final check before locking, not another calibration round.";
 
 export default function ProjectTrainingPage() {
   const { projectId, codebookId } = useParams<{ projectId: string; codebookId: string }>();
@@ -36,9 +42,8 @@ export default function ProjectTrainingPage() {
   const [gameIds, setGameIds] = useState<string[]>([]);
   const [training, setTraining] = useState<CodebookTraining | null>(null);
   const [counts, setCounts] = useState<Record<SplitBucket, number>>({ calibration: 0, test: 0, verification: 0 });
-  const [calibrationReviews, setCalibrationReviews] = useState<
-    { id: string; reviewId: string; reviewText: string; reviewGameId: string }[]
-  >([]);
+  const [calibrationReviews, setCalibrationReviews] = useState<BucketReview[]>([]);
+  const [testReviews, setTestReviews] = useState<BucketReview[]>([]);
   const [taggings, setTaggings] = useState<TaggingForAnalytics[]>([]);
 
   const [calibrationSampleSize, setCalibrationSampleSize] = useState(DEFAULT_CALIBRATION_SIZE);
@@ -48,9 +53,9 @@ export default function ProjectTrainingPage() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [runningAiPass, setRunningAiPass] = useState(false);
-  const [aiProgress, setAiProgress] = useState<{ done: number; total: number } | null>(null);
   const [revising, setRevising] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
+  const [locking, setLocking] = useState(false);
 
   async function load() {
     const cb = await getCodebookById(codebookId);
@@ -68,13 +73,15 @@ export default function ProjectTrainingPage() {
     const t = await getTrainingForCodebook(codebookId);
     setTraining(t);
     if (t) {
-      const [c, calib, tgs] = await Promise.all([
+      const [c, calib, test, tgs] = await Promise.all([
         countSplitAssignmentsByBucket(t.id),
         listSplitAssignments(t.id, "calibration"),
+        listSplitAssignments(t.id, "test"),
         listTaggingsForCodebookAnalytics(codebookId),
       ]);
       setCounts(c);
       setCalibrationReviews(calib);
+      setTestReviews(test);
       setTaggings(tgs);
     }
     setLoading(false);
@@ -110,44 +117,44 @@ export default function ProjectTrainingPage() {
     }
   }
 
-  const humanCodedReviewIds = new Set(
-    taggings.filter((t) => t.coderKind === "HUMAN").map((t) => t.reviewId),
-  );
-  const aiCodedReviewIds = new Set(taggings.filter((t) => t.coderKind === "AI").map((t) => t.reviewId));
-  const readyForAiPass = calibrationReviews.filter(
-    (r) => humanCodedReviewIds.has(r.reviewId) && !aiCodedReviewIds.has(r.reviewId),
-  );
-
-  async function handleRunAiPass() {
-    setRunningAiPass(true);
-    setAiProgress({ done: 0, total: readyForAiPass.length });
-    const codeInputs = codes.map((c) => ({ id: c.id, label: c.label, description: c.description, color: c.color }));
-    let failed = 0;
-    for (let i = 0; i < readyForAiPass.length; i++) {
-      const r = readyForAiPass[i]!;
-      const result = await runIndependentAiPass(r.reviewId, r.reviewText, codeInputs);
-      if (result.error) failed++;
-      setAiProgress({ done: i + 1, total: readyForAiPass.length });
-    }
-    setRunningAiPass(false);
-    if (failed > 0) {
-      toast.error(`${failed} review(s) failed — likely rate-limited. Try again shortly.`);
-    } else {
-      toast.success("AI coded the calibration sample independently");
-    }
-    await load();
-  }
-
   async function handleRevise() {
     setRevising(true);
     try {
       const created = await reviseCodebook(codebookId);
-      toast.success(`Revised to v${created.version} — the same calibration split carries forward`);
+      toast.success(`Revised to v${created.version} — the same split carries forward`);
       router.push(`/projects/${projectId}/codebooks/${created.id}/training`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setRevising(false);
+    }
+  }
+
+  async function handleAdvanceToTesting() {
+    if (!training) return;
+    setAdvancing(true);
+    try {
+      await advanceTrainingPhase(training.id, "testing");
+      await load();
+      toast.success("Moved to the test phase — the test bucket is now ready to blind-tag");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setAdvancing(false);
+    }
+  }
+
+  async function handleLock() {
+    if (!training) return;
+    setLocking(true);
+    try {
+      await lockTraining(training.id);
+      await load();
+      toast.success("Codebook locked for validation — no further edits or revisions");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLocking(false);
     }
   }
 
@@ -250,32 +257,7 @@ export default function ProjectTrainingPage() {
     );
   }
 
-  const calibrationDone = calibrationReviews.filter((r) => humanCodedReviewIds.has(r.reviewId)).length;
-
-  const mismatches = calibrationReviews
-    .filter((r) => aiCodedReviewIds.has(r.reviewId))
-    .map((r) => {
-      const humanCodes = new Set(
-        taggings.filter((t) => t.reviewId === r.reviewId && t.coderKind === "HUMAN").map((t) => t.codeId),
-      );
-      const aiCodes = new Set(
-        taggings.filter((t) => t.reviewId === r.reviewId && t.coderKind === "AI").map((t) => t.codeId),
-      );
-      const agrees = humanCodes.size === aiCodes.size && [...humanCodes].every((c) => aiCodes.has(c));
-      return { review: r, humanCodes, aiCodes, agrees };
-    });
-
-  const pairs = calibrationReviews
-    .filter((r) => humanCodedReviewIds.has(r.reviewId) && aiCodedReviewIds.has(r.reviewId))
-    .flatMap((r) =>
-      codes.map((code) => ({
-        humanPresent: taggings.some(
-          (t) => t.reviewId === r.reviewId && t.codeId === code.id && t.coderKind === "HUMAN",
-        ),
-        aiPresent: taggings.some((t) => t.reviewId === r.reviewId && t.codeId === code.id && t.coderKind === "AI"),
-      })),
-    );
-  const reliability = pairs.length > 0 ? cohensKappa(pairs) : null;
+  const isLocked = training.phase === "locked" || training.phase === "verified";
 
   return (
     <main className="mx-auto max-w-2xl p-8">
@@ -287,102 +269,88 @@ export default function ProjectTrainingPage() {
         <h1 className="text-2xl font-semibold">
           {codebook.name} <span className="text-base font-normal text-gray-400">v{codebook.version}</span> — Training
         </h1>
-        <button
-          type="button"
-          onClick={handleRevise}
-          disabled={revising}
-          className="shrink-0 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
-        >
-          {revising ? "Revising…" : "Revise codebook →"}
-        </button>
+        {isLocked ? (
+          <span className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
+            Locked for validation
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={handleRevise}
+            disabled={revising}
+            className="shrink-0 rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-50 disabled:opacity-50"
+          >
+            {revising ? "Revising…" : "Revise codebook →"}
+          </button>
+        )}
       </div>
       <p className="mt-1 text-xs text-gray-500">
         Phase: <span className="font-medium">{training.phase}</span> · {counts.calibration} calibration ·{" "}
-        {counts.test} test (reserved) · {counts.verification} verification (reserved)
+        {counts.test} test{training.phase === "calibrating" ? " (reserved)" : ""} · {counts.verification} verification
+        (reserved)
       </p>
 
-      <section className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm p-4">
-        <h2 className="font-medium">1. Blind-tag the calibration sample</h2>
-        <p className="mt-1 text-xs text-gray-500">
-          {calibrationDone} of {calibrationReviews.length} tagged. No AI help on these.
-        </p>
-        <ul className="mt-3 flex flex-col gap-2">
-          {calibrationReviews.map((r) => (
-            <li key={r.id} className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 p-2 text-sm">
-              <span className="shrink-0 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-700">
-                {gameNames[r.reviewGameId] ?? "Unknown game"}
-              </span>
-              <p className="line-clamp-1 flex-1 text-gray-600">{r.reviewText.slice(0, 80)}</p>
-              <span className="shrink-0 text-xs text-gray-500">
-                {humanCodedReviewIds.has(r.reviewId) ? "✓ tagged" : "not yet"}
-                {aiCodedReviewIds.has(r.reviewId) ? " · AI coded" : ""}
-              </span>
-              <Link
-                href={`/projects/${projectId}/codebooks/${codebookId}/training/tag/${r.reviewId}`}
-                className="shrink-0 text-xs underline"
-              >
-                {humanCodedReviewIds.has(r.reviewId) ? "Review" : "Tag"} →
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <TrainingBucketPanel
+        stepStart={1}
+        bucketLabel="calibration sample"
+        reviews={calibrationReviews}
+        taggings={taggings}
+        codes={codes}
+        tagHrefFor={(reviewId) => `/projects/${projectId}/codebooks/${codebookId}/training/tag/${reviewId}`}
+        gameNames={gameNames}
+        onChanged={load}
+      />
 
-      <section className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm p-4">
-        <h2 className="font-medium">2. Run the AI independently</h2>
-        <p className="mt-1 text-xs text-gray-500">
-          Codes every blind-tagged calibration review on its own — no accept/reject step.
-        </p>
-        <button
-          type="button"
-          onClick={handleRunAiPass}
-          disabled={runningAiPass || readyForAiPass.length === 0}
-          className="mt-3 rounded-lg bg-black px-4 py-1.5 text-sm text-white disabled:opacity-50"
-        >
-          {runningAiPass
-            ? `Coding… (${aiProgress?.done ?? 0}/${aiProgress?.total ?? 0})`
-            : readyForAiPass.length === 0
-              ? "Nothing new to code"
-              : `Run on ${readyForAiPass.length} review(s)`}
-        </button>
-      </section>
-
-      {reliability && (
+      {training.phase === "calibrating" && (
         <section className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm p-4">
-          <h2 className="font-medium">3. Compare</h2>
-          {reliability.kappa === null ? (
-            <p className="mt-2 text-sm text-gray-500">Perfect agreement with no variance — κ is undefined.</p>
-          ) : (
-            <p className="mt-2 text-2xl font-semibold">
-              κ = {reliability.kappa.toFixed(3)}{" "}
-              <span className="text-sm font-normal text-gray-500">({interpretKappa(reliability.kappa)})</span>
-            </p>
-          )}
+          <h2 className="font-medium">Ready to move on?</h2>
           <p className="mt-1 text-xs text-gray-500">
-            Over {mismatches.length} review(s) × {codes.length} code(s) where both you and the AI have coded.
+            Revise and re-run calibration as many times as you like. When you&apos;re satisfied, move on to
+            the test bucket — the {counts.test} reserved test review(s) will become blind-taggable.
           </p>
+          <button
+            type="button"
+            onClick={handleAdvanceToTesting}
+            disabled={advancing || counts.test === 0}
+            className="mt-3 rounded-lg border border-gray-900 px-4 py-1.5 text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+          >
+            {advancing ? "Advancing…" : "Move on to the test phase →"}
+          </button>
+          {counts.test === 0 && (
+            <p className="mt-1 text-xs text-gray-500">No reviews were held out for testing — adjust the split next time.</p>
+          )}
+        </section>
+      )}
 
-          <ul className="mt-3 flex flex-col gap-2">
-            {mismatches
-              .filter((m) => !m.agrees)
-              .map((m) => (
-                <li key={m.review.id} className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs">
-                  <p className="text-gray-700">
-                    <span className="mr-1 rounded bg-white px-1 py-0.5 text-gray-600">
-                      {gameNames[m.review.reviewGameId] ?? "Unknown game"}
-                    </span>
-                    {m.review.reviewText.slice(0, 120)}
-                  </p>
-                  <p className="mt-1 text-gray-500">
-                    You: {[...m.humanCodes].map((id) => codes.find((c) => c.id === id)?.label).join(", ") || "none"}{" "}
-                    · AI: {[...m.aiCodes].map((id) => codes.find((c) => c.id === id)?.label).join(", ") || "none"}
-                  </p>
-                </li>
-              ))}
-            {mismatches.every((m) => m.agrees) && mismatches.length > 0 && (
-              <li className="text-xs text-gray-500">No disagreements in the calibration sample.</li>
-            )}
-          </ul>
+      {training.phase !== "calibrating" && (
+        <TrainingBucketPanel
+          stepStart={4}
+          bucketLabel="test set"
+          reviews={testReviews}
+          taggings={taggings}
+          codes={codes}
+          tagHrefFor={(reviewId) => `/projects/${projectId}/codebooks/${codebookId}/training/tag/${reviewId}`}
+          gameNames={gameNames}
+          nudge={TEST_NUDGE}
+          onChanged={load}
+        />
+      )}
+
+      {training.phase === "testing" && (
+        <section className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm p-4">
+          <h2 className="font-medium">Lock for validation</h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Stops further codebook edits and revisions. This can&apos;t be undone — a failed
+            verification later means starting a fresh training, not reopening this one.
+          </p>
+          <button
+            type="button"
+            onClick={handleLock}
+            disabled={locking}
+            className="mt-3 rounded-lg bg-black px-4 py-1.5 text-sm text-white disabled:opacity-50"
+          >
+            {locking ? "Locking…" : "Lock codebook for validation →"}
+          </button>
         </section>
       )}
     </main>
