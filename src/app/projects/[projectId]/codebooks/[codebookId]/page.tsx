@@ -15,6 +15,7 @@ import {
   type Codebook,
 } from "@/lib/localDb/queries/codebooks";
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
+import { getTrainingForCodebook } from "@/lib/localDb/queries/training";
 
 export default function ProjectCodebookDetailPage() {
   const { projectId, codebookId } = useParams<{ projectId: string; codebookId: string }>();
@@ -24,6 +25,7 @@ export default function ProjectCodebookDetailPage() {
   const [codebook, setCodebook] = useState<Codebook | null>(null);
   const [codes, setCodes] = useState<Code[]>([]);
   const [nextVersion, setNextVersion] = useState<Codebook | null>(null);
+  const [locked, setLocked] = useState(false);
   const [revising, setRevising] = useState(false);
 
   useEffect(() => {
@@ -36,16 +38,18 @@ export default function ProjectCodebookDetailPage() {
         setLoading(false);
         return;
       }
-      const [p, cds, next] = await Promise.all([
+      const [p, cds, next, training] = await Promise.all([
         getProjectById(projectId),
         listCodesForCodebook(codebookId),
         getNextVersionCodebook(codebookId),
+        getTrainingForCodebook(codebookId),
       ]);
       if (cancelled) return;
       setProject(p);
       setCodebook(cb);
       setCodes(cds);
       setNextVersion(next);
+      setLocked(training?.phase === "locked" || training?.phase === "verified");
       setLoading(false);
     })();
     return () => {
@@ -117,6 +121,10 @@ export default function ProjectCodebookDetailPage() {
           >
             A newer version (v{nextVersion.version}) exists →
           </Link>
+        ) : locked ? (
+          <span className="shrink-0 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
+            Locked for validation
+          </span>
         ) : (
           <button
             type="button"
@@ -129,8 +137,17 @@ export default function ProjectCodebookDetailPage() {
         )}
       </div>
 
+      <div className="mt-4">
+        <Link
+          href={`/projects/${projectId}/codebooks/${codebookId}/training`}
+          className="inline-block rounded-lg border border-gray-900 px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
+        >
+          Training (blind calibrate → test → verify → auto-code) →
+        </Link>
+      </div>
+
       <div className="mt-6">
-        <CodeManager codebookId={codebookId} codes={codes} />
+        <CodeManager codebookId={codebookId} codes={codes} locked={locked} />
       </div>
     </main>
   );

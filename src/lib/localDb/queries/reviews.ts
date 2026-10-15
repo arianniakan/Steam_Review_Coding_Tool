@@ -33,9 +33,13 @@ export interface ReviewWithTaggingCount extends Review {
 
 const PAGE_SIZE = 25;
 
-export async function countReviews(gameId: string | string[], sp: ReviewSearchParams): Promise<number> {
+export async function countReviews(
+  gameId: string | string[],
+  sp: ReviewSearchParams,
+  excludeReviewIds?: string[],
+): Promise<number> {
   const db = await getDb();
-  const { sql, params } = buildReviewWhereSql(gameId, sp);
+  const { sql, params } = buildReviewWhereSql(gameId, sp, excludeReviewIds);
   const result = await db.query<{ count: number }>(
     `SELECT COUNT(*)::int AS count FROM "Review" WHERE ${sql}`,
     params,
@@ -52,9 +56,10 @@ export async function countCodedReviews(
   gameId: string | string[],
   sp: ReviewSearchParams,
   codebookId?: string,
+  excludeReviewIds?: string[],
 ): Promise<number> {
   const db = await getDb();
-  const { sql, params } = buildReviewWhereSql(gameId, sp);
+  const { sql, params } = buildReviewWhereSql(gameId, sp, excludeReviewIds);
   const codebookFilter = codebookId
     ? `AND c."codebookId" = $${params.length + 1}`
     : "";
@@ -75,9 +80,10 @@ export async function listReviews(
   page: number,
   codebookId?: string,
   pageSize: number = PAGE_SIZE,
+  excludeReviewIds?: string[],
 ): Promise<ReviewWithTaggingCount[]> {
   const db = await getDb();
-  const { sql, params } = buildReviewWhereSql(gameId, sp);
+  const { sql, params } = buildReviewWhereSql(gameId, sp, excludeReviewIds);
   const orderBy = buildReviewOrderBySql(sp);
   const offset = Math.max(page - 1, 0) * pageSize;
   const codebookFilter = codebookId
@@ -105,9 +111,10 @@ export async function getReviewById(id: string): Promise<Review | null> {
 export async function listReviewIdsOrdered(
   gameId: string | string[],
   sp: ReviewSearchParams,
+  excludeReviewIds?: string[],
 ): Promise<string[]> {
   const db = await getDb();
-  const { sql, params } = buildReviewWhereSql(gameId, sp);
+  const { sql, params } = buildReviewWhereSql(gameId, sp, excludeReviewIds);
   const orderBy = buildReviewOrderBySql(sp);
   const result = await db.query<{ id: string }>(
     `SELECT "id" FROM "Review" WHERE ${sql} ORDER BY ${orderBy}`,

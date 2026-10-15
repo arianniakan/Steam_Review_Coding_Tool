@@ -22,8 +22,29 @@ export class CircularHierarchyError extends Error {
   }
 }
 
+export class CodebookLockedError extends Error {
+  constructor() {
+    super("This codebook is locked for validation and can no longer be edited");
+  }
+}
+
 function isUniqueViolation(err: unknown): boolean {
   return typeof err === "object" && err !== null && (err as { code?: string }).code === "23505";
+}
+
+// Mirrors codebooks.ts's own db_getTrainingPhase — duplicated rather than
+// imported to avoid a circular import (codebooks.ts already imports from
+// this file for listCodesForCodebook).
+async function assertCodebookNotLocked(codebookId: string): Promise<void> {
+  const db = await getDb();
+  const result = await db.query<{ phase: string | null }>(
+    `SELECT ct."phase" FROM "Codebook" cb
+     LEFT JOIN "CodebookTraining" ct ON ct."id" = cb."trainingId"
+     WHERE cb."id" = $1`,
+    [codebookId],
+  );
+  const phase = result.rows[0]?.phase;
+  if (phase === "locked" || phase === "verified") throw new CodebookLockedError();
 }
 
 export async function listCodesForCodebook(codebookId: string): Promise<Code[]> {
@@ -48,6 +69,7 @@ export async function createCode(data: {
   color: string;
   parentCodeId: string | null;
 }): Promise<Code> {
+  await assertCodebookNotLocked(data.codebookId);
   const db = await getDb();
   const id = newId();
   try {
@@ -89,6 +111,7 @@ export async function updateCode(
 ): Promise<Code> {
   const existing = await getCodeById(codeId);
   if (!existing) throw new Error("Code not found");
+  await assertCodebookNotLocked(existing.codebookId);
 
   const label = patch.label?.trim() || existing.label;
   const description = patch.description?.trim() || existing.description;
@@ -112,6 +135,9 @@ export async function updateCode(
 }
 
 export async function deleteCode(id: string): Promise<void> {
+  const existing = await getCodeById(id);
+  if (!existing) return;
+  await assertCodebookNotLocked(existing.codebookId);
   // Child codes are automatically detached (parentCodeId -> null) via the
   // schema's ON DELETE SET NULL; taggings using this code cascade-delete.
   const db = await getDb();

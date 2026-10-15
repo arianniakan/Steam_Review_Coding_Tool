@@ -79,6 +79,24 @@ CREATE TABLE IF NOT EXISTS "ProjectGame" (
 );
 CREATE INDEX IF NOT EXISTS "ProjectGame_gameId_idx" ON "ProjectGame"("gameId");
 
+-- One row per "training run" — a lineage of codebook revisions sharing one
+-- held-out split for blind calibration/test/verification. Lives separately
+-- from Codebook so the split and phase survive a revision (the new
+-- version's trainingId is copied forward by reviseCodebook, the same way
+-- gameId/projectId/name already are).
+CREATE TABLE IF NOT EXISTS "CodebookTraining" (
+  "id" TEXT PRIMARY KEY,
+  "currentCodebookId" TEXT NOT NULL,
+  "phase" TEXT NOT NULL DEFAULT 'setup',
+  "heldOutPercent" INTEGER NOT NULL,
+  "verificationSharePercent" INTEGER NOT NULL,
+  "distributionMode" TEXT,
+  "filterQuery" TEXT NOT NULL DEFAULT '',
+  "lockedAt" TIMESTAMPTZ,
+  "verifiedAt" TIMESTAMPTZ,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- A codebook is scoped to exactly one game (legacy) OR one project (spans
 -- every game in that project) — never both, never neither.
 CREATE TABLE IF NOT EXISTS "Codebook" (
@@ -88,12 +106,30 @@ CREATE TABLE IF NOT EXISTS "Codebook" (
   "name" TEXT NOT NULL,
   "version" INTEGER NOT NULL DEFAULT 1,
   "previousVersionId" TEXT REFERENCES "Codebook"("id") ON DELETE SET NULL,
+  "trainingId" TEXT REFERENCES "CodebookTraining"("id") ON DELETE SET NULL,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT "Codebook_scope_check" CHECK (("gameId" IS NOT NULL) <> ("projectId" IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS "Codebook_gameId_idx" ON "Codebook"("gameId");
 CREATE INDEX IF NOT EXISTS "Codebook_projectId_idx" ON "Codebook"("projectId");
 CREATE INDEX IF NOT EXISTS "Codebook_previousVersionId_idx" ON "Codebook"("previousVersionId");
+CREATE INDEX IF NOT EXISTS "Codebook_trainingId_idx" ON "Codebook"("trainingId");
+
+ALTER TABLE "CodebookTraining" ADD CONSTRAINT "CodebookTraining_currentCodebookId_fkey"
+  FOREIGN KEY ("currentCodebookId") REFERENCES "Codebook"("id") ON DELETE CASCADE;
+
+-- Drawn once when the split wizard finishes; stable across revisions
+-- because it keys off trainingId, not codebookId.
+CREATE TABLE IF NOT EXISTS "ReviewSplitAssignment" (
+  "id" TEXT PRIMARY KEY,
+  "trainingId" TEXT NOT NULL REFERENCES "CodebookTraining"("id") ON DELETE CASCADE,
+  "reviewId" TEXT NOT NULL REFERENCES "Review"("id") ON DELETE CASCADE,
+  "bucket" TEXT NOT NULL,
+  "assignedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE ("trainingId", "reviewId")
+);
+CREATE INDEX IF NOT EXISTS "ReviewSplitAssignment_trainingId_idx" ON "ReviewSplitAssignment"("trainingId");
+CREATE INDEX IF NOT EXISTS "ReviewSplitAssignment_reviewId_idx" ON "ReviewSplitAssignment"("reviewId");
 
 CREATE TABLE IF NOT EXISTS "Code" (
   "id" TEXT PRIMARY KEY,

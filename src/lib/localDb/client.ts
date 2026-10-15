@@ -99,6 +99,37 @@ async function runMigrations(db: PGlite): Promise<void> {
       CREATE INDEX IF NOT EXISTS "Codebook_previousVersionId_idx" ON "Codebook"("previousVersionId");
     `);
   }
+
+  if (!(await tableExists(db, "CodebookTraining"))) {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS "CodebookTraining" (
+        "id" TEXT PRIMARY KEY,
+        "currentCodebookId" TEXT NOT NULL REFERENCES "Codebook"("id") ON DELETE CASCADE,
+        "phase" TEXT NOT NULL DEFAULT 'setup',
+        "heldOutPercent" INTEGER NOT NULL,
+        "verificationSharePercent" INTEGER NOT NULL,
+        "distributionMode" TEXT,
+        "filterQuery" TEXT NOT NULL DEFAULT '',
+        "lockedAt" TIMESTAMPTZ,
+        "verifiedAt" TIMESTAMPTZ,
+        "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+      );
+
+      ALTER TABLE "Codebook" ADD COLUMN IF NOT EXISTS "trainingId" TEXT REFERENCES "CodebookTraining"("id") ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS "Codebook_trainingId_idx" ON "Codebook"("trainingId");
+
+      CREATE TABLE IF NOT EXISTS "ReviewSplitAssignment" (
+        "id" TEXT PRIMARY KEY,
+        "trainingId" TEXT NOT NULL REFERENCES "CodebookTraining"("id") ON DELETE CASCADE,
+        "reviewId" TEXT NOT NULL REFERENCES "Review"("id") ON DELETE CASCADE,
+        "bucket" TEXT NOT NULL,
+        "assignedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE ("trainingId", "reviewId")
+      );
+      CREATE INDEX IF NOT EXISTS "ReviewSplitAssignment_trainingId_idx" ON "ReviewSplitAssignment"("trainingId");
+      CREATE INDEX IF NOT EXISTS "ReviewSplitAssignment_reviewId_idx" ON "ReviewSplitAssignment"("reviewId");
+    `);
+  }
 }
 
 async function createClient(loadDataDir?: Blob | File): Promise<PGlite> {
