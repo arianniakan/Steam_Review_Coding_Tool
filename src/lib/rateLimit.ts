@@ -48,13 +48,34 @@ function clientIp(request: Request): string {
   return request.headers.get("x-real-ip") ?? "unknown";
 }
 
+// Env-overridable so a private, non-public deployment (e.g. for real
+// research use, as opposed to this portfolio's public demo instance) can
+// raise these far past what's safe to expose on an unauthenticated public
+// URL, without forking the code. Unset on the public deployment, so its
+// behavior is unchanged — these fall back to the original conservative
+// defaults there.
+function envLimit(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 // Single source of truth for each bucket's budget — used by the AI routes
 // themselves (to actually enforce it) and by /api/rate-limit-status (to let
 // the client show quota *before* spending a request, not just after). Keeping
 // these in one place means the two can't silently drift out of sync.
 export const RATE_LIMIT_BUCKETS = {
-  suggestCodes: { name: "suggest-codes", limit: 20, window: "1 h" as const },
-  suggestCodebook: { name: "suggest-codebook", limit: 5, window: "1 h" as const },
+  suggestCodes: {
+    name: "suggest-codes",
+    limit: envLimit("RATE_LIMIT_SUGGEST_CODES_LIMIT", 20),
+    window: "1 h" as const,
+  },
+  suggestCodebook: {
+    name: "suggest-codebook",
+    limit: envLimit("RATE_LIMIT_SUGGEST_CODEBOOK_LIMIT", 5),
+    window: "1 h" as const,
+  },
 } satisfies Record<string, { name: string; limit: number; window: `${number} ${"s" | "m" | "h" | "d"}` }>;
 
 export interface RateLimitResult {
