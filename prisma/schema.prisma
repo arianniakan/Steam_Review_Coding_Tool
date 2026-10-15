@@ -79,6 +79,7 @@ model Review {
 
   taggings            Tagging[]
   rejectedSuggestions RejectedSuggestion[]
+  splitAssignments    ReviewSplitAssignment[]
 
   @@index([gameId])
   @@index([gameId, votedUp])
@@ -148,12 +149,53 @@ model Codebook {
   previousVersion   Codebook?  @relation("CodebookVersionChain", fields: [previousVersionId], references: [id])
   revisions         Codebook[] @relation("CodebookVersionChain")
 
+  // The blind calibration/test/verification run this version belongs to,
+  // if any — copied forward across revisions by reviseCodebook so the held
+  // -out split and phase survive iterating on the codebook mid-training.
+  trainingId String?
+  training   CodebookTraining? @relation(fields: [trainingId], references: [id])
+
   codes               Code[]
   rejectedSuggestions RejectedSuggestion[]
 
   @@index([gameId])
   @@index([projectId])
   @@index([previousVersionId])
+  @@index([trainingId])
+}
+
+// One row per "training run" — the held-out split and phase for a
+// calibrate-blind -> test -> verify -> bulk-auto-code pipeline, kept
+// separate from Codebook so it survives revisions within the same run.
+// See src/lib/localDb/queries/training.ts.
+model CodebookTraining {
+  id                       String    @id @default(cuid())
+  currentCodebookId        String
+  phase                    String    @default("setup") // setup|calibrating|testing|locked|verified
+  heldOutPercent           Int
+  verificationSharePercent Int // share of the held-out pool that is verification; rest is test
+  distributionMode         String? // equal|proportional — project-scoped codebooks only
+  filterQuery              String    @default("") // serialized ReviewSearchParams used when the split was drawn
+  lockedAt                 DateTime?
+  verifiedAt               DateTime?
+  createdAt                DateTime  @default(now())
+
+  codebooks Codebook[]
+  splits    ReviewSplitAssignment[]
+}
+
+// Drawn once when the split wizard finishes; stable across revisions
+// because it keys off trainingId, not codebookId.
+model ReviewSplitAssignment {
+  id         String           @id @default(cuid())
+  trainingId String
+  training   CodebookTraining @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+  reviewId   String
+  review     Review           @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  bucket     String // calibration|test|verification
+  assignedAt DateTime         @default(now())
+
+  @@unique([trainingId, reviewId])
 }
 
 model Code {

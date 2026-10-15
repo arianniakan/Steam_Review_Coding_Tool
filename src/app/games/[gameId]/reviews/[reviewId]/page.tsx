@@ -14,6 +14,7 @@ import { getReviewById, listReviewIdsOrdered, type Review } from "@/lib/localDb/
 import { listCodebooksForGame, type Codebook } from "@/lib/localDb/queries/codebooks";
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { listTaggingsForReview, type TaggingWithCode } from "@/lib/localDb/queries/taggings";
+import { getGatedReviewIds } from "@/lib/localDb/queries/training";
 import { resolveActiveCodebookId } from "@/lib/activeCodebook";
 
 type SearchParams = ReviewSearchParams & { codebookId?: string };
@@ -31,6 +32,7 @@ export default function ReviewDetailPage() {
   const [codes, setCodes] = useState<Code[]>([]);
   const [taggings, setTaggings] = useState<TaggingWithCode[]>([]);
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
+  const [gated, setGated] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,10 +51,13 @@ export default function ReviewDetailPage() {
       if (cbs.length > 0) {
         const active = resolveActiveCodebookId(gameId, cbs, searchParams.get("codebookId"))!;
         setActiveCodebookId(active);
+        const gatedIds = await getGatedReviewIds(active);
+        if (cancelled) return;
+        setGated(gatedIds.includes(reviewId));
         const [cds, tgs, ids] = await Promise.all([
           listCodesForCodebook(active),
           listTaggingsForReview(reviewId, active),
-          listReviewIdsOrdered(gameId, sp),
+          listReviewIdsOrdered(gameId, sp, gatedIds),
         ]);
         if (cancelled) return;
         setCodes(cds);
@@ -164,28 +169,40 @@ export default function ReviewDetailPage() {
         <span>{new Date(review.timestampCreated).toISOString().slice(0, 10)}</span>
       </div>
 
-      <TagEditor
-        reviewId={reviewId}
-        reviewText={review.text}
-        codebookId={activeCodebookId!}
-        codes={codes.map((c) => ({
-          id: c.id,
-          label: c.label,
-          description: c.description,
-          color: c.color,
-          parentCodeId: c.parentCodeId,
-        }))}
-        initialTaggings={taggings.map((t) => ({
-          id: t.id,
-          spanStart: t.spanStart,
-          spanEnd: t.spanEnd,
-          memo: t.memo,
-          aiConfidence: t.aiConfidence,
-          aiRationale: t.aiRationale,
-          code: { id: t.codeId, label: t.codeLabel, color: t.codeColor },
-          coder: { name: t.coderName, kind: t.coderKind },
-        }))}
-      />
+      {gated ? (
+        <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500">
+          This review is reserved for this codebook&apos;s training (held out for a blind
+          test/verification check) and can&apos;t be tagged here until that training is
+          verified. Tag it from the{" "}
+          <Link href={`/games/${gameId}/codebooks/${activeCodebookId}/training`} className="underline">
+            Training flow
+          </Link>{" "}
+          instead.
+        </div>
+      ) : (
+        <TagEditor
+          reviewId={reviewId}
+          reviewText={review.text}
+          codebookId={activeCodebookId!}
+          codes={codes.map((c) => ({
+            id: c.id,
+            label: c.label,
+            description: c.description,
+            color: c.color,
+            parentCodeId: c.parentCodeId,
+          }))}
+          initialTaggings={taggings.map((t) => ({
+            id: t.id,
+            spanStart: t.spanStart,
+            spanEnd: t.spanEnd,
+            memo: t.memo,
+            aiConfidence: t.aiConfidence,
+            aiRationale: t.aiRationale,
+            code: { id: t.codeId, label: t.codeLabel, color: t.codeColor },
+            coder: { name: t.coderName, kind: t.coderKind },
+          }))}
+        />
+      )}
 
       <div className="mt-6">
         <ReviewNav

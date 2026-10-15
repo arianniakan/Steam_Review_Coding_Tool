@@ -32,6 +32,7 @@ export interface ReviewSearchParams {
 export function buildReviewWhereSql(
   gameId: string | string[],
   sp: ReviewSearchParams,
+  excludeReviewIds?: string[],
 ): { sql: string; params: unknown[] } {
   const conditions: string[] = Array.isArray(gameId) ? [`"gameId" = ANY($1)`] : [`"gameId" = $1`];
   const params: unknown[] = [gameId];
@@ -65,6 +66,10 @@ export function buildReviewWhereSql(
 
   const minLength = Number(sp.minLength);
   if (sp.minLength && Number.isFinite(minLength)) push(`"textLength" >= ?`, minLength);
+
+  // Hides reviews reserved for an active (not-yet-verified) training's
+  // test/verification buckets — see getGatedReviewIds in queries/training.ts.
+  if (excludeReviewIds && excludeReviewIds.length > 0) push(`NOT ("id" = ANY(?))`, excludeReviewIds);
 
   return { sql: conditions.join(" AND "), params };
 }

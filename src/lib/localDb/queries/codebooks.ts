@@ -8,6 +8,7 @@ export interface Codebook {
   name: string;
   version: number;
   previousVersionId: string | null;
+  trainingId: string | null;
   createdAt: string;
 }
 
@@ -109,15 +110,21 @@ export async function createCodebookWithCodes(
 export async function reviseCodebook(codebookId: string): Promise<Codebook> {
   const old = await getCodebookById(codebookId);
   if (!old) throw new Error("Codebook not found");
+  if (old.trainingId) {
+    const training = await db_getTrainingPhase(old.trainingId);
+    if (training === "locked" || training === "verified") {
+      throw new Error("This codebook is locked for validation and can no longer be revised");
+    }
+  }
   const oldCodes = await listCodesForCodebook(codebookId);
 
   const db = await getDb();
   const newCodebookId = newId();
   await db.transaction(async (tx) => {
     await tx.query(
-      `INSERT INTO "Codebook" ("id", "gameId", "projectId", "name", "version", "previousVersionId")
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [newCodebookId, old.gameId, old.projectId, old.name, old.version + 1, old.id],
+      `INSERT INTO "Codebook" ("id", "gameId", "projectId", "name", "version", "previousVersionId", "trainingId")
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [newCodebookId, old.gameId, old.projectId, old.name, old.version + 1, old.id, old.trainingId],
     );
     const idMap = new Map<string, string>();
     for (const code of oldCodes) {
@@ -130,9 +137,27 @@ export async function reviseCodebook(codebookId: string): Promise<Codebook> {
         [newCodeId, newCodebookId, code.label, code.description, code.color, newParentId],
       );
     }
+    // Keep the training pointed at whichever codebook version is now active,
+    // so the blind-tagging flow and gating always resolve to the latest one.
+    if (old.trainingId) {
+      await tx.query(`UPDATE "CodebookTraining" SET "currentCodebookId" = $1 WHERE "id" = $2`, [
+        newCodebookId,
+        old.trainingId,
+      ]);
+    }
   });
   const created = await getCodebookById(newCodebookId);
   return created!;
+}
+
+// Minimal standalone phase lookup — avoids a circular import with
+// queries/training.ts (which doesn't need anything from this file).
+async function db_getTrainingPhase(trainingId: string): Promise<string | null> {
+  const db = await getDb();
+  const result = await db.query<{ phase: string }>(`SELECT "phase" FROM "CodebookTraining" WHERE "id" = $1`, [
+    trainingId,
+  ]);
+  return result.rows[0]?.phase ?? null;
 }
 
 export async function getNextVersionCodebook(codebookId: string): Promise<Codebook | null> {

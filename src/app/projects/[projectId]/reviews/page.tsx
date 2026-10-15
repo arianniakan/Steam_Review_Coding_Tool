@@ -17,6 +17,7 @@ import {
 } from "@/lib/localDb/queries/reviews";
 import { getProjectById, listGamesForProject, type Project } from "@/lib/localDb/queries/projects";
 import { listCodebooksForProject, type Codebook } from "@/lib/localDb/queries/codebooks";
+import { getGatedReviewIds } from "@/lib/localDb/queries/training";
 import { resolveActiveProjectCodebookId } from "@/lib/activeCodebook";
 import type { Game } from "@/lib/localDb/queries/games";
 
@@ -68,14 +69,16 @@ export default function ProjectMixedReviewsPage() {
       const active = resolveActiveProjectCodebookId(projectId, cbs, searchParams.get("codebookId"));
       setCodebooks(cbs);
       setActiveCodebookId(active);
+      const gated = active ? await getGatedReviewIds(active) : [];
+      if (cancelled) return;
 
       // Round-robin: fetch each game's own page of `perGame` reviews (its
       // own LIMIT/OFFSET), then interleave — deterministic and bookmarkable,
       // unlike a randomized proportional sample.
       const [perGameReviews, counts, coded, langs] = await Promise.all([
-        Promise.all(gs.map((g) => listReviews(g.id, sp, page, active, perGame))),
-        Promise.all(gs.map((g) => countReviews(g.id, sp))),
-        countCodedReviews(gameIds, sp, active),
+        Promise.all(gs.map((g) => listReviews(g.id, sp, page, active, perGame, gated))),
+        Promise.all(gs.map((g) => countReviews(g.id, sp, gated))),
+        countCodedReviews(gameIds, sp, active, gated),
         groupReviewsByLanguage(gameIds),
       ]);
       if (cancelled) return;

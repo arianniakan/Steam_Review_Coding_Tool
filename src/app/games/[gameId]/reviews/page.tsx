@@ -15,6 +15,7 @@ import {
 import { listSavedSamplesForGame, type SavedSample } from "@/lib/localDb/queries/savedSamples";
 import { getGameById, type Game } from "@/lib/localDb/queries/games";
 import { listCodebooksForGame, type Codebook } from "@/lib/localDb/queries/codebooks";
+import { getGatedReviewIds } from "@/lib/localDb/queries/training";
 import { resolveActiveCodebookId } from "@/lib/activeCodebook";
 import { SavedSamples } from "./SavedSamples";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
@@ -54,11 +55,13 @@ export default function ReviewsPage() {
       const active = resolveActiveCodebookId(gameId, cbs, searchParams.get("codebookId"));
       setCodebooks(cbs);
       setActiveCodebookId(active);
+      const gated = active ? await getGatedReviewIds(active) : [];
+      if (cancelled) return;
 
       const [t, c, r, s, l] = await Promise.all([
-        countReviews(gameId, sp),
-        countCodedReviews(gameId, sp, active),
-        listReviews(gameId, sp, page, active),
+        countReviews(gameId, sp, gated),
+        countCodedReviews(gameId, sp, active, gated),
+        listReviews(gameId, sp, page, active, undefined, gated),
         listSavedSamplesForGame(gameId),
         groupReviewsByLanguage(gameId),
       ]);
