@@ -140,6 +140,24 @@ async function runMigrations(db: PGlite): Promise<void> {
       ALTER TABLE "ReviewSplitAssignment" ADD COLUMN IF NOT EXISTS "aiAttemptedAt" TIMESTAMPTZ;
     `);
   }
+
+  // Tracks bulk auto-code attempts (Phase B4) separately from
+  // ReviewSplitAssignment, since these reviews were never part of the
+  // held-out split — see the schema.sql comment for why this can't be
+  // inferred from Tagging rows alone.
+  if (!(await tableExists(db, "AutoCodeAttempt"))) {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS "AutoCodeAttempt" (
+        "id" TEXT PRIMARY KEY,
+        "trainingId" TEXT NOT NULL REFERENCES "CodebookTraining"("id") ON DELETE CASCADE,
+        "reviewId" TEXT NOT NULL REFERENCES "Review"("id") ON DELETE CASCADE,
+        "attemptedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE ("trainingId", "reviewId")
+      );
+      CREATE INDEX IF NOT EXISTS "AutoCodeAttempt_trainingId_idx" ON "AutoCodeAttempt"("trainingId");
+      CREATE INDEX IF NOT EXISTS "AutoCodeAttempt_reviewId_idx" ON "AutoCodeAttempt"("reviewId");
+    `);
+  }
 }
 
 async function createClient(loadDataDir?: Blob | File): Promise<PGlite> {

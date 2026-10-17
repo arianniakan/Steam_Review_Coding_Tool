@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
 import { TrainingBucketPanel, computeBucketStats, type BucketReview } from "./TrainingBucketPanel";
+import { AutoCodeRestPanel } from "./AutoCodeRestPanel";
 import { getCodebookById, reviseCodebook, type Codebook } from "@/lib/localDb/queries/codebooks";
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { interpretKappa } from "@/lib/kappa";
@@ -428,6 +429,10 @@ export default function TrainingPage() {
           </section>
         );
       })()}
+
+      {training.phase === "verified" && (
+        <AutoCodeRestPanel training={training} gameIds={[gameId]} codebookId={codebookId} codes={codes} />
+      )}
     </main>
   );
 }

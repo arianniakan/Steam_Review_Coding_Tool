@@ -10,6 +10,7 @@ import {
   computeBucketStats,
   type BucketReview,
 } from "@/app/games/[gameId]/codebooks/[codebookId]/training/TrainingBucketPanel";
+import { AutoCodeRestPanel } from "@/app/games/[gameId]/codebooks/[codebookId]/training/AutoCodeRestPanel";
 import { getCodebookById, reviseCodebook, type Codebook } from "@/lib/localDb/queries/codebooks";
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { listGamesForProject } from "@/lib/localDb/queries/projects";
@@ -453,6 +454,10 @@ export default function ProjectTrainingPage() {
           </section>
         );
       })()}
+
+      {training.phase === "verified" && (
+        <AutoCodeRestPanel training={training} gameIds={gameIds} codebookId={codebookId} codes={codes} />
+      )}
     </main>
   );
 }

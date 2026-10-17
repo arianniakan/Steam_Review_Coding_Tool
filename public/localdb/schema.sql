@@ -132,6 +132,21 @@ CREATE TABLE IF NOT EXISTS "ReviewSplitAssignment" (
 CREATE INDEX IF NOT EXISTS "ReviewSplitAssignment_trainingId_idx" ON "ReviewSplitAssignment"("trainingId");
 CREATE INDEX IF NOT EXISTS "ReviewSplitAssignment_reviewId_idx" ON "ReviewSplitAssignment"("reviewId");
 
+-- Tracks which reviews the bulk auto-code pass (Phase B4) has already
+-- attempted, separate from ReviewSplitAssignment since these reviews were
+-- never part of the held-out split — without this, a review the AI
+-- genuinely finds zero codes for (no Tagging row written) would look
+-- identical to "never attempted" and get reprocessed on every batch.
+CREATE TABLE IF NOT EXISTS "AutoCodeAttempt" (
+  "id" TEXT PRIMARY KEY,
+  "trainingId" TEXT NOT NULL REFERENCES "CodebookTraining"("id") ON DELETE CASCADE,
+  "reviewId" TEXT NOT NULL REFERENCES "Review"("id") ON DELETE CASCADE,
+  "attemptedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE ("trainingId", "reviewId")
+);
+CREATE INDEX IF NOT EXISTS "AutoCodeAttempt_trainingId_idx" ON "AutoCodeAttempt"("trainingId");
+CREATE INDEX IF NOT EXISTS "AutoCodeAttempt_reviewId_idx" ON "AutoCodeAttempt"("reviewId");
+
 CREATE TABLE IF NOT EXISTS "Code" (
   "id" TEXT PRIMARY KEY,
   "codebookId" TEXT NOT NULL REFERENCES "Codebook"("id") ON DELETE CASCADE,

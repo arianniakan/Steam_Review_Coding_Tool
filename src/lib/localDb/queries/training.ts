@@ -231,3 +231,59 @@ export async function advanceTrainingPhase(trainingId: string, phase: TrainingPh
     await db.query(`UPDATE "CodebookTraining" SET "phase" = $2 WHERE "id" = $1`, [trainingId, phase]);
   }
 }
+
+export interface UntrainedReview {
+  reviewId: string;
+  reviewText: string;
+  reviewGameId: string;
+}
+
+// The Phase B4 target set: every review in the training's original scope
+// that isn't part of the held-out split, hasn't already been attempted by a
+// prior auto-code batch, and has no existing Tagging at all under this
+// codebook (human or AI — a review a human already hand-coded through the
+// normal AI-Assisted flow shouldn't silently get an uninvited independent
+// AI opinion layered on top of it).
+export async function listUntrainedReviews(
+  training: CodebookTraining,
+  gameIds: string[],
+  codebookId: string,
+): Promise<UntrainedReview[]> {
+  const db = await getDb();
+  const [splitRows, attemptRows, taggedRows] = await Promise.all([
+    db.query<{ reviewId: string }>(`SELECT "reviewId" FROM "ReviewSplitAssignment" WHERE "trainingId" = $1`, [
+      training.id,
+    ]),
+    db.query<{ reviewId: string }>(`SELECT "reviewId" FROM "AutoCodeAttempt" WHERE "trainingId" = $1`, [training.id]),
+    db.query<{ reviewId: string }>(
+      `SELECT DISTINCT t."reviewId" FROM "Tagging" t JOIN "Code" c ON c."id" = t."codeId" WHERE c."codebookId" = $1`,
+      [codebookId],
+    ),
+  ]);
+  const excludeIds = [
+    ...new Set([...splitRows.rows, ...attemptRows.rows, ...taggedRows.rows].map((r) => r.reviewId)),
+  ];
+
+  const filters = Object.fromEntries(new URLSearchParams(training.filterQuery).entries()) as ReviewSearchParams;
+  const remainingIds = await listReviewIdsOrdered(gameIds, filters, excludeIds);
+  if (remainingIds.length === 0) return [];
+
+  const result = await db.query<UntrainedReview>(
+    `SELECT "id" AS "reviewId", "text" AS "reviewText", "gameId" AS "reviewGameId" FROM "Review" WHERE "id" = ANY($1)`,
+    [remainingIds],
+  );
+  return result.rows;
+}
+
+// Marks that the bulk auto-code pass has attempted this review, regardless
+// of how many (if any) codes it suggested — same "attempted vs. produced a
+// tagging" distinction as markAiAttempted, needed here too since these
+// reviews were never assigned to ReviewSplitAssignment in the first place.
+export async function markAutoCodeAttempted(trainingId: string, reviewId: string): Promise<void> {
+  const db = await getDb();
+  await db.query(
+    `INSERT INTO "AutoCodeAttempt" ("id", "trainingId", "reviewId") VALUES ($1, $2, $3)
+     ON CONFLICT ("trainingId", "reviewId") DO NOTHING`,
+    [newId(), trainingId, reviewId],
+  );
+}
