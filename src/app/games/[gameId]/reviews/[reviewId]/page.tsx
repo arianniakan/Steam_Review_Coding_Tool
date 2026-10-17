@@ -15,6 +15,10 @@ import { listCodebooksForGame, type Codebook } from "@/lib/localDb/queries/codeb
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { listTaggingsForReview, type TaggingWithCode } from "@/lib/localDb/queries/taggings";
 import { getGatedReviewIds } from "@/lib/localDb/queries/training";
+import {
+  listIrrelevantReviewIds,
+  unmarkReviewIrrelevant,
+} from "@/lib/localDb/queries/reviewRelevance";
 import { resolveActiveCodebookId } from "@/lib/activeCodebook";
 
 type SearchParams = ReviewSearchParams & { codebookId?: string };
@@ -33,44 +37,57 @@ export default function ReviewDetailPage() {
   const [taggings, setTaggings] = useState<TaggingWithCode[]>([]);
   const [orderedIds, setOrderedIds] = useState<string[]>([]);
   const [gated, setGated] = useState(false);
+  const [irrelevant, setIrrelevant] = useState(false);
+  const [unmarking, setUnmarking] = useState(false);
+
+  async function load() {
+    const [g, r, cbs] = await Promise.all([
+      getGameById(gameId),
+      getReviewById(reviewId),
+      listCodebooksForGame(gameId),
+    ]);
+    setGame(g);
+    setReview(r && r.gameId === gameId ? r : null);
+    setCodebooks(cbs);
+
+    if (cbs.length > 0) {
+      const active = resolveActiveCodebookId(gameId, cbs, searchParams.get("codebookId"))!;
+      setActiveCodebookId(active);
+      const [gatedIds, irrelevantIds] = await Promise.all([
+        getGatedReviewIds(active),
+        listIrrelevantReviewIds(active),
+      ]);
+      setGated(gatedIds.includes(reviewId));
+      setIrrelevant(irrelevantIds.includes(reviewId));
+      const excluded = [...gatedIds, ...irrelevantIds];
+      const [cds, tgs, ids] = await Promise.all([
+        listCodesForCodebook(active),
+        listTaggingsForReview(reviewId, active),
+        listReviewIdsOrdered(gameId, sp, excluded),
+      ]);
+      setCodes(cds);
+      setTaggings(tgs);
+      setOrderedIds(ids);
+    }
+    setLoading(false);
+  }
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
-    (async () => {
-      const [g, r, cbs] = await Promise.all([
-        getGameById(gameId),
-        getReviewById(reviewId),
-        listCodebooksForGame(gameId),
-      ]);
-      if (cancelled) return;
-      setGame(g);
-      setReview(r && r.gameId === gameId ? r : null);
-      setCodebooks(cbs);
-
-      if (cbs.length > 0) {
-        const active = resolveActiveCodebookId(gameId, cbs, searchParams.get("codebookId"))!;
-        setActiveCodebookId(active);
-        const gatedIds = await getGatedReviewIds(active);
-        if (cancelled) return;
-        setGated(gatedIds.includes(reviewId));
-        const [cds, tgs, ids] = await Promise.all([
-          listCodesForCodebook(active),
-          listTaggingsForReview(reviewId, active),
-          listReviewIdsOrdered(gameId, sp, gatedIds),
-        ]);
-        if (cancelled) return;
-        setCodes(cds);
-        setTaggings(tgs);
-        setOrderedIds(ids);
-      }
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, reviewId, searchParams.toString()]);
+
+  async function handleUnmarkIrrelevant() {
+    if (!activeCodebookId) return;
+    setUnmarking(true);
+    try {
+      await unmarkReviewIrrelevant(reviewId, activeCodebookId);
+      await load();
+    } finally {
+      setUnmarking(false);
+    }
+  }
 
   const breadcrumbItems = [
     { label: "Games", href: "/games" },
@@ -178,6 +195,19 @@ export default function ReviewDetailPage() {
             Training flow
           </Link>{" "}
           instead.
+        </div>
+      ) : irrelevant ? (
+        <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500">
+          This review was marked not relevant to this codebook, so it&apos;s hidden from the
+          normal tagging flow.
+          <button
+            type="button"
+            onClick={handleUnmarkIrrelevant}
+            disabled={unmarking}
+            className="ml-1 underline disabled:opacity-50"
+          >
+            {unmarking ? "Un-marking…" : "Un-mark"}
+          </button>
         </div>
       ) : (
         <TagEditor

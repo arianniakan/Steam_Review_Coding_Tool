@@ -14,6 +14,10 @@ import { listCodebooksForProject, type Codebook } from "@/lib/localDb/queries/co
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { listTaggingsForReview, type TaggingWithCode } from "@/lib/localDb/queries/taggings";
 import { getGatedReviewIds } from "@/lib/localDb/queries/training";
+import {
+  listIrrelevantReviewIds,
+  unmarkReviewIrrelevant,
+} from "@/lib/localDb/queries/reviewRelevance";
 import { resolveActiveProjectCodebookId } from "@/lib/activeCodebook";
 
 export default function ProjectReviewDetailPage() {
@@ -29,47 +33,57 @@ export default function ProjectReviewDetailPage() {
   const [codes, setCodes] = useState<Code[]>([]);
   const [taggings, setTaggings] = useState<TaggingWithCode[]>([]);
   const [gated, setGated] = useState(false);
+  const [irrelevant, setIrrelevant] = useState(false);
+  const [unmarking, setUnmarking] = useState(false);
+
+  async function load() {
+    const [p, r, cbs] = await Promise.all([
+      getProjectById(projectId),
+      getReviewById(reviewId),
+      listCodebooksForProject(projectId),
+    ]);
+    setProject(p);
+    setReview(r);
+    setCodebooks(cbs);
+
+    if (r) {
+      const g = await getGameById(r.gameId);
+      setGame(g);
+    }
+
+    if (cbs.length > 0) {
+      const active = resolveActiveProjectCodebookId(projectId, cbs, searchParams.get("codebookId"))!;
+      setActiveCodebookId(active);
+      const [cds, tgs, gatedIds, irrelevantIds] = await Promise.all([
+        listCodesForCodebook(active),
+        listTaggingsForReview(reviewId, active),
+        getGatedReviewIds(active),
+        listIrrelevantReviewIds(active),
+      ]);
+      setCodes(cds);
+      setTaggings(tgs);
+      setGated(gatedIds.includes(reviewId));
+      setIrrelevant(irrelevantIds.includes(reviewId));
+    }
+    setLoading(false);
+  }
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
-    (async () => {
-      const [p, r, cbs] = await Promise.all([
-        getProjectById(projectId),
-        getReviewById(reviewId),
-        listCodebooksForProject(projectId),
-      ]);
-      if (cancelled) return;
-      setProject(p);
-      setReview(r);
-      setCodebooks(cbs);
-
-      if (r) {
-        const g = await getGameById(r.gameId);
-        if (cancelled) return;
-        setGame(g);
-      }
-
-      if (cbs.length > 0) {
-        const active = resolveActiveProjectCodebookId(projectId, cbs, searchParams.get("codebookId"))!;
-        setActiveCodebookId(active);
-        const [cds, tgs, gatedIds] = await Promise.all([
-          listCodesForCodebook(active),
-          listTaggingsForReview(reviewId, active),
-          getGatedReviewIds(active),
-        ]);
-        if (cancelled) return;
-        setCodes(cds);
-        setTaggings(tgs);
-        setGated(gatedIds.includes(reviewId));
-      }
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, reviewId, searchParams.toString()]);
+
+  async function handleUnmarkIrrelevant() {
+    if (!activeCodebookId) return;
+    setUnmarking(true);
+    try {
+      await unmarkReviewIrrelevant(reviewId, activeCodebookId);
+      await load();
+    } finally {
+      setUnmarking(false);
+    }
+  }
 
   const backQuery = new URLSearchParams(searchParams.toString());
   backQuery.delete("codebookId");
@@ -155,6 +169,19 @@ export default function ProjectReviewDetailPage() {
             Training flow
           </Link>{" "}
           instead.
+        </div>
+      ) : irrelevant ? (
+        <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500">
+          This review was marked not relevant to this codebook, so it&apos;s hidden from the
+          normal tagging flow.
+          <button
+            type="button"
+            onClick={handleUnmarkIrrelevant}
+            disabled={unmarking}
+            className="ml-1 underline disabled:opacity-50"
+          >
+            {unmarking ? "Un-marking…" : "Un-mark"}
+          </button>
         </div>
       ) : (
         <TagEditor

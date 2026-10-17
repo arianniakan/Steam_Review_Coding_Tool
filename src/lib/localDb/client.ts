@@ -158,6 +158,24 @@ async function runMigrations(db: PGlite): Promise<void> {
       CREATE INDEX IF NOT EXISTS "AutoCodeAttempt_reviewId_idx" ON "AutoCodeAttempt"("reviewId");
     `);
   }
+
+  // Phase B5 — marks a review as not relevant to a specific codebook's
+  // research question (per-codebook, not global: a review irrelevant for
+  // one codebook may be exactly what another wants). See the schema.sql
+  // comment for why this is a side table, not a flag on Review.
+  if (!(await tableExists(db, "ReviewRelevance"))) {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS "ReviewRelevance" (
+        "id" TEXT PRIMARY KEY,
+        "reviewId" TEXT NOT NULL REFERENCES "Review"("id") ON DELETE CASCADE,
+        "codebookId" TEXT NOT NULL REFERENCES "Codebook"("id") ON DELETE CASCADE,
+        "excludedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE ("reviewId", "codebookId")
+      );
+      CREATE INDEX IF NOT EXISTS "ReviewRelevance_reviewId_idx" ON "ReviewRelevance"("reviewId");
+      CREATE INDEX IF NOT EXISTS "ReviewRelevance_codebookId_idx" ON "ReviewRelevance"("codebookId");
+    `);
+  }
 }
 
 async function createClient(loadDataDir?: Blob | File): Promise<PGlite> {
