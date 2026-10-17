@@ -80,6 +80,7 @@ model Review {
   taggings            Tagging[]
   rejectedSuggestions RejectedSuggestion[]
   splitAssignments    ReviewSplitAssignment[]
+  autoCodeAttempts    AutoCodeAttempt[]
 
   @@index([gameId])
   @@index([gameId, votedUp])
@@ -180,8 +181,9 @@ model CodebookTraining {
   verifiedAt               DateTime?
   createdAt                DateTime  @default(now())
 
-  codebooks Codebook[]
-  splits    ReviewSplitAssignment[]
+  codebooks         Codebook[]
+  splits            ReviewSplitAssignment[]
+  autoCodeAttempts  AutoCodeAttempt[]
 }
 
 // Drawn once when the split wizard finishes; stable across revisions
@@ -195,6 +197,20 @@ model ReviewSplitAssignment {
   bucket     String // calibration|test|verification
   assignedAt DateTime         @default(now())
   aiAttemptedAt DateTime? // set once the independent AI pass has run, even if it found zero codes
+
+  @@unique([trainingId, reviewId])
+}
+
+// Tracks which reviews the bulk auto-code pass (Phase B4) has already
+// attempted, separate from ReviewSplitAssignment since these reviews were
+// never part of the held-out split.
+model AutoCodeAttempt {
+  id           String           @id @default(cuid())
+  trainingId   String
+  training     CodebookTraining @relation(fields: [trainingId], references: [id], onDelete: Cascade)
+  reviewId     String
+  review       Review           @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  attemptedAt  DateTime         @default(now())
 
   @@unique([trainingId, reviewId])
 }

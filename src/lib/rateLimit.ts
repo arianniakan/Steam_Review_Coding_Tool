@@ -54,7 +54,7 @@ function clientIp(request: Request): string {
 // URL, without forking the code. Unset on the public deployment, so its
 // behavior is unchanged — these fall back to the original conservative
 // defaults there.
-function envLimit(name: string, fallback: number): number {
+export function envLimit(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
   const parsed = Number(raw);
