@@ -9,6 +9,7 @@ import {
   countReviews,
   countCodedReviews,
   listReviews,
+  listReviewIdsOrdered,
   groupReviewsByLanguage,
   type ReviewWithTaggingCount,
 } from "@/lib/localDb/queries/reviews";
@@ -16,6 +17,11 @@ import { listSavedSamplesForGame, type SavedSample } from "@/lib/localDb/queries
 import { getGameById, type Game } from "@/lib/localDb/queries/games";
 import { listCodebooksForGame, type Codebook } from "@/lib/localDb/queries/codebooks";
 import { getGatedReviewIds } from "@/lib/localDb/queries/training";
+import {
+  listIrrelevantReviewIds,
+  markReviewIrrelevant,
+  markReviewsIrrelevantBulk,
+} from "@/lib/localDb/queries/reviewRelevance";
 import { resolveActiveCodebookId } from "@/lib/activeCodebook";
 import { SavedSamples } from "./SavedSamples";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
@@ -37,47 +43,66 @@ export default function ReviewsPage() {
   const [languages, setLanguages] = useState<{ language: string; count: number }[]>([]);
   const [codebooks, setCodebooks] = useState<Codebook[]>([]);
   const [activeCodebookId, setActiveCodebookId] = useState<string | undefined>(undefined);
+  const [excludedIds, setExcludedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [bulkMarking, setBulkMarking] = useState(false);
+
+  async function load() {
+    const g = await getGameById(gameId);
+    setGame(g);
+    if (!g) {
+      setLoading(false);
+      return;
+    }
+    const cbs = await listCodebooksForGame(gameId);
+    const active = resolveActiveCodebookId(gameId, cbs, searchParams.get("codebookId"));
+    setCodebooks(cbs);
+    setActiveCodebookId(active);
+    const [gated, irrelevant] = active
+      ? await Promise.all([getGatedReviewIds(active), listIrrelevantReviewIds(active)])
+      : [[], []];
+    const excluded = [...gated, ...irrelevant];
+    setExcludedIds(excluded);
+
+    const [t, c, r, s, l] = await Promise.all([
+      countReviews(gameId, sp, excluded),
+      countCodedReviews(gameId, sp, active, excluded),
+      listReviews(gameId, sp, page, active, undefined, excluded),
+      listSavedSamplesForGame(gameId),
+      groupReviewsByLanguage(gameId),
+    ]);
+    setTotal(t);
+    setCodedCount(c);
+    setReviews(r);
+    setSavedSamples(s);
+    setLanguages(l);
+    setLoading(false);
+  }
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
-    (async () => {
-      const g = await getGameById(gameId);
-      if (cancelled) return;
-      setGame(g);
-      if (!g) {
-        setLoading(false);
-        return;
-      }
-      const cbs = await listCodebooksForGame(gameId);
-      if (cancelled) return;
-      const active = resolveActiveCodebookId(gameId, cbs, searchParams.get("codebookId"));
-      setCodebooks(cbs);
-      setActiveCodebookId(active);
-      const gated = active ? await getGatedReviewIds(active) : [];
-      if (cancelled) return;
-
-      const [t, c, r, s, l] = await Promise.all([
-        countReviews(gameId, sp, gated),
-        countCodedReviews(gameId, sp, active, gated),
-        listReviews(gameId, sp, page, active, undefined, gated),
-        listSavedSamplesForGame(gameId),
-        groupReviewsByLanguage(gameId),
-      ]);
-      if (cancelled) return;
-      setTotal(t);
-      setCodedCount(c);
-      setReviews(r);
-      setSavedSamples(s);
-      setLanguages(l);
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameId, searchParams.toString()]);
+
+  async function handleMarkIrrelevant(reviewId: string) {
+    if (!activeCodebookId) return;
+    await markReviewIrrelevant(reviewId, activeCodebookId);
+    setReviews((prev) => prev.filter((r) => r.id !== reviewId));
+    setTotal((prev) => Math.max(prev - 1, 0));
+  }
+
+  async function handleMarkAllIrrelevant() {
+    if (!activeCodebookId) return;
+    setBulkMarking(true);
+    try {
+      const matchingIds = await listReviewIdsOrdered(gameId, sp, excludedIds);
+      await markReviewsIrrelevantBulk(matchingIds, activeCodebookId);
+      await load();
+    } finally {
+      setBulkMarking(false);
+    }
+  }
 
   const PAGE_SIZE = 25;
   const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
@@ -171,6 +196,17 @@ export default function ReviewsPage() {
         {codedCount} of {total} coded
       </p>
 
+      {activeCodebookId && total > 0 && (
+        <button
+          type="button"
+          onClick={handleMarkAllIrrelevant}
+          disabled={bulkMarking}
+          className="mt-2 text-xs text-gray-500 underline disabled:opacity-50"
+        >
+          {bulkMarking ? "Marking…" : `Mark all ${total} matching as not relevant →`}
+        </button>
+      )}
+
       <ReviewFilterForm sp={sp} languages={languages} clearHref={`/games/${gameId}/reviews`} />
 
       <SavedSamples
@@ -214,12 +250,23 @@ export default function ReviewsPage() {
               )}
             </div>
             <p className="mt-2 whitespace-pre-wrap">{r.text}</p>
-            <Link
-              href={`/games/${gameId}/reviews/${r.id}?${tagQuery.toString()}`}
-              className="mt-2 inline-block text-xs underline"
-            >
-              Tag this review →
-            </Link>
+            <div className="mt-2 flex items-center gap-3">
+              <Link
+                href={`/games/${gameId}/reviews/${r.id}?${tagQuery.toString()}`}
+                className="inline-block text-xs underline"
+              >
+                Tag this review →
+              </Link>
+              {activeCodebookId && (
+                <button
+                  type="button"
+                  onClick={() => handleMarkIrrelevant(r.id)}
+                  className="text-xs text-gray-500 underline"
+                >
+                  Not relevant →
+                </button>
+              )}
+            </div>
           </li>
         ))}
         {reviews.length === 0 && (

@@ -1,5 +1,6 @@
 import { getDb, newId } from "../client";
 import { listReviewIdsOrdered } from "./reviews";
+import { listIrrelevantReviewIds } from "./reviewRelevance";
 import type { ReviewSearchParams } from "./reviewFilters";
 
 export type TrainingPhase = "calibrating" | "testing" | "locked" | "verified";
@@ -75,13 +76,18 @@ export async function startTraining(options: StartTrainingOptions): Promise<Code
   // Exclude reviews already tagged under this codebook — if a review was
   // coded before training started (e.g. via the normal AI-assisted flow),
   // the human has already seen AI output for it, so it can never be a
-  // genuinely blind calibration/test/verification data point.
+  // genuinely blind calibration/test/verification data point. Also exclude
+  // reviews marked not relevant to this codebook (Phase B5) — the whole
+  // point of that feature is keeping noise out of future splits.
   const db0 = await getDb();
-  const alreadyTagged = await db0.query<{ reviewId: string }>(
-    `SELECT DISTINCT t."reviewId" FROM "Tagging" t JOIN "Code" c ON c."id" = t."codeId" WHERE c."codebookId" = $1`,
-    [codebookId],
-  );
-  const excludeIds = new Set(alreadyTagged.rows.map((r) => r.reviewId));
+  const [alreadyTagged, irrelevantIds] = await Promise.all([
+    db0.query<{ reviewId: string }>(
+      `SELECT DISTINCT t."reviewId" FROM "Tagging" t JOIN "Code" c ON c."id" = t."codeId" WHERE c."codebookId" = $1`,
+      [codebookId],
+    ),
+    listIrrelevantReviewIds(codebookId),
+  ]);
+  const excludeIds = new Set([...alreadyTagged.rows.map((r) => r.reviewId), ...irrelevantIds]);
 
   const perGameIds = (await Promise.all(gameIds.map((id) => listReviewIdsOrdered(id, filters)))).map((ids) =>
     ids.filter((id) => !excludeIds.has(id)),
@@ -250,7 +256,7 @@ export async function listUntrainedReviews(
   codebookId: string,
 ): Promise<UntrainedReview[]> {
   const db = await getDb();
-  const [splitRows, attemptRows, taggedRows] = await Promise.all([
+  const [splitRows, attemptRows, taggedRows, irrelevantIds] = await Promise.all([
     db.query<{ reviewId: string }>(`SELECT "reviewId" FROM "ReviewSplitAssignment" WHERE "trainingId" = $1`, [
       training.id,
     ]),
@@ -259,9 +265,15 @@ export async function listUntrainedReviews(
       `SELECT DISTINCT t."reviewId" FROM "Tagging" t JOIN "Code" c ON c."id" = t."codeId" WHERE c."codebookId" = $1`,
       [codebookId],
     ),
+    listIrrelevantReviewIds(codebookId),
   ]);
   const excludeIds = [
-    ...new Set([...splitRows.rows, ...attemptRows.rows, ...taggedRows.rows].map((r) => r.reviewId)),
+    ...new Set([
+      ...splitRows.rows.map((r) => r.reviewId),
+      ...attemptRows.rows.map((r) => r.reviewId),
+      ...taggedRows.rows.map((r) => r.reviewId),
+      ...irrelevantIds,
+    ]),
   ];
 
   const filters = Object.fromEntries(new URLSearchParams(training.filterQuery).entries()) as ReviewSearchParams;

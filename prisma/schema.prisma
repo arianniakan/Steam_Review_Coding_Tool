@@ -81,6 +81,7 @@ model Review {
   rejectedSuggestions RejectedSuggestion[]
   splitAssignments    ReviewSplitAssignment[]
   autoCodeAttempts    AutoCodeAttempt[]
+  relevanceMarks      ReviewRelevance[]
 
   @@index([gameId])
   @@index([gameId, votedUp])
@@ -158,6 +159,7 @@ model Codebook {
 
   codes               Code[]
   rejectedSuggestions RejectedSuggestion[]
+  relevanceMarks      ReviewRelevance[]
 
   @@index([gameId])
   @@index([projectId])
@@ -272,6 +274,22 @@ model RejectedSuggestion {
   aiRationale  String
   rejectedAt   DateTime @default(now())
 
+  @@index([reviewId])
+  @@index([codebookId])
+}
+
+// A row's existence is the exclusion — relevance is per-codebook, not
+// global to the review, since a review irrelevant to one codebook's
+// research question may be exactly what a different codebook wants.
+model ReviewRelevance {
+  id         String   @id @default(cuid())
+  reviewId   String
+  review     Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  codebookId String
+  codebook   Codebook @relation(fields: [codebookId], references: [id], onDelete: Cascade)
+  excludedAt DateTime @default(now())
+
+  @@unique([reviewId, codebookId])
   @@index([reviewId])
   @@index([codebookId])
 }

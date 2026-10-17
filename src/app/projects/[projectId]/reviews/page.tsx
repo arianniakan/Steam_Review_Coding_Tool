@@ -12,12 +12,18 @@ import {
   countReviews,
   countCodedReviews,
   listReviews,
+  listReviewIdsOrdered,
   groupReviewsByLanguage,
   type ReviewWithTaggingCount,
 } from "@/lib/localDb/queries/reviews";
 import { getProjectById, listGamesForProject, type Project } from "@/lib/localDb/queries/projects";
 import { listCodebooksForProject, type Codebook } from "@/lib/localDb/queries/codebooks";
 import { getGatedReviewIds } from "@/lib/localDb/queries/training";
+import {
+  listIrrelevantReviewIds,
+  markReviewIrrelevant,
+  markReviewsIrrelevantBulk,
+} from "@/lib/localDb/queries/reviewRelevance";
 import { resolveActiveProjectCodebookId } from "@/lib/activeCodebook";
 import type { Game } from "@/lib/localDb/queries/games";
 
@@ -43,65 +49,83 @@ export default function ProjectMixedReviewsPage() {
   const [languages, setLanguages] = useState<{ language: string; count: number }[]>([]);
   const [codebooks, setCodebooks] = useState<Codebook[]>([]);
   const [activeCodebookId, setActiveCodebookId] = useState<string | undefined>(undefined);
+  const [excludedIds, setExcludedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [bulkMarking, setBulkMarking] = useState(false);
+
+  async function load() {
+    const p = await getProjectById(projectId);
+    setProject(p);
+    if (!p) {
+      setLoading(false);
+      return;
+    }
+    const gs = await listGamesForProject(projectId);
+    setGames(gs);
+    if (gs.length === 0) {
+      setLoading(false);
+      return;
+    }
+    const gameIds = gs.map((g) => g.id);
+    const cbs = await listCodebooksForProject(projectId);
+    const active = resolveActiveProjectCodebookId(projectId, cbs, searchParams.get("codebookId"));
+    setCodebooks(cbs);
+    setActiveCodebookId(active);
+    const [gated, irrelevant] = active
+      ? await Promise.all([getGatedReviewIds(active), listIrrelevantReviewIds(active)])
+      : [[], []];
+    const excluded = [...gated, ...irrelevant];
+    setExcludedIds(excluded);
+
+    // Round-robin: fetch each game's own page of `perGame` reviews (its
+    // own LIMIT/OFFSET), then interleave — deterministic and bookmarkable,
+    // unlike a randomized proportional sample.
+    const [perGameReviews, counts, coded, langs] = await Promise.all([
+      Promise.all(gs.map((g) => listReviews(g.id, sp, page, active, perGame, excluded))),
+      Promise.all(gs.map((g) => countReviews(g.id, sp, excluded))),
+      countCodedReviews(gameIds, sp, active, excluded),
+      groupReviewsByLanguage(gameIds),
+    ]);
+
+    const gameNameById = new Map(gs.map((g) => [g.id, g.name]));
+    const interleaved: MixedRow[] = [];
+    for (let i = 0; i < perGame; i++) {
+      for (let gi = 0; gi < gs.length; gi++) {
+        const r = perGameReviews[gi]![i];
+        if (r) interleaved.push({ ...r, gameName: gameNameById.get(r.gameId) ?? "Unknown game" });
+      }
+    }
+    setRows(interleaved);
+    setPerGameCounts(Object.fromEntries(gs.map((g, i) => [g.id, counts[i]!])));
+    setCodedCount(coded);
+    setLanguages(langs);
+    setLoading(false);
+  }
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
-    (async () => {
-      const p = await getProjectById(projectId);
-      if (cancelled) return;
-      setProject(p);
-      if (!p) {
-        setLoading(false);
-        return;
-      }
-      const gs = await listGamesForProject(projectId);
-      if (cancelled) return;
-      setGames(gs);
-      if (gs.length === 0) {
-        setLoading(false);
-        return;
-      }
-      const gameIds = gs.map((g) => g.id);
-      const cbs = await listCodebooksForProject(projectId);
-      if (cancelled) return;
-      const active = resolveActiveProjectCodebookId(projectId, cbs, searchParams.get("codebookId"));
-      setCodebooks(cbs);
-      setActiveCodebookId(active);
-      const gated = active ? await getGatedReviewIds(active) : [];
-      if (cancelled) return;
-
-      // Round-robin: fetch each game's own page of `perGame` reviews (its
-      // own LIMIT/OFFSET), then interleave — deterministic and bookmarkable,
-      // unlike a randomized proportional sample.
-      const [perGameReviews, counts, coded, langs] = await Promise.all([
-        Promise.all(gs.map((g) => listReviews(g.id, sp, page, active, perGame, gated))),
-        Promise.all(gs.map((g) => countReviews(g.id, sp, gated))),
-        countCodedReviews(gameIds, sp, active, gated),
-        groupReviewsByLanguage(gameIds),
-      ]);
-      if (cancelled) return;
-
-      const gameNameById = new Map(gs.map((g) => [g.id, g.name]));
-      const interleaved: MixedRow[] = [];
-      for (let i = 0; i < perGame; i++) {
-        for (let gi = 0; gi < gs.length; gi++) {
-          const r = perGameReviews[gi]![i];
-          if (r) interleaved.push({ ...r, gameName: gameNameById.get(r.gameId) ?? "Unknown game" });
-        }
-      }
-      setRows(interleaved);
-      setPerGameCounts(Object.fromEntries(gs.map((g, i) => [g.id, counts[i]!])));
-      setCodedCount(coded);
-      setLanguages(langs);
-      setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, searchParams.toString()]);
+
+  async function handleMarkIrrelevant(reviewId: string) {
+    if (!activeCodebookId) return;
+    await markReviewIrrelevant(reviewId, activeCodebookId);
+    setRows((prev) => prev.filter((r) => r.id !== reviewId));
+  }
+
+  async function handleMarkAllIrrelevant() {
+    if (!activeCodebookId || games.length === 0) return;
+    setBulkMarking(true);
+    try {
+      const gameIds = games.map((g) => g.id);
+      const matchingIds = await listReviewIdsOrdered(gameIds, sp, excludedIds);
+      await markReviewsIrrelevantBulk(matchingIds, activeCodebookId);
+      await load();
+    } finally {
+      setBulkMarking(false);
+    }
+  }
 
   const totalPerGame = Object.values(perGameCounts);
   const total = totalPerGame.reduce((a, b) => a + b, 0);
@@ -217,6 +241,17 @@ export default function ProjectMixedReviewsPage() {
         </label>
       </div>
 
+      {activeCodebookId && total > 0 && (
+        <button
+          type="button"
+          onClick={handleMarkAllIrrelevant}
+          disabled={bulkMarking}
+          className="mt-2 text-xs text-gray-500 underline disabled:opacity-50"
+        >
+          {bulkMarking ? "Marking…" : `Mark all ${total} matching as not relevant →`}
+        </button>
+      )}
+
       <ReviewFilterForm sp={sp} languages={languages} clearHref={`/projects/${projectId}/reviews?perGame=${perGame}`} />
 
       <ul className="mt-6 flex flex-col gap-4">
@@ -246,12 +281,23 @@ export default function ProjectMixedReviewsPage() {
               )}
             </div>
             <p className="mt-2 whitespace-pre-wrap">{r.text}</p>
-            <Link
-              href={`/projects/${projectId}/reviews/${r.id}?${tagQuery.toString()}`}
-              className="mt-2 inline-block text-xs underline"
-            >
-              Tag this review →
-            </Link>
+            <div className="mt-2 flex items-center gap-3">
+              <Link
+                href={`/projects/${projectId}/reviews/${r.id}?${tagQuery.toString()}`}
+                className="inline-block text-xs underline"
+              >
+                Tag this review →
+              </Link>
+              {activeCodebookId && (
+                <button
+                  type="button"
+                  onClick={() => handleMarkIrrelevant(r.id)}
+                  className="text-xs text-gray-500 underline"
+                >
+                  Not relevant →
+                </button>
+              )}
+            </div>
           </li>
         ))}
         {rows.length === 0 && (

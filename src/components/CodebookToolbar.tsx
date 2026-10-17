@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { exportCodebookCsv } from "@/lib/localDb/csvExport";
 import { countDisagreementsForCodebook } from "@/lib/localDb/queries/rejectedSuggestions";
+import { countIrrelevantReviews } from "@/lib/localDb/queries/reviewRelevance";
 import {
   setStoredActiveCodebookId,
   setStoredActiveProjectCodebookId,
@@ -38,6 +39,7 @@ export function CodebookToolbar({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [disagreementCount, setDisagreementCount] = useState(0);
+  const [excludedCount, setExcludedCount] = useState(0);
 
   const basePath = scope.type === "game" ? `/games/${scope.gameId}` : `/projects/${scope.projectId}`;
   const noCodebooksLabel = scope.type === "game" ? "this game" : "this project";
@@ -49,8 +51,13 @@ export function CodebookToolbar({
     // rendered — nothing to reset.
     if (!effectiveActiveId) return;
     let cancelled = false;
-    countDisagreementsForCodebook(effectiveActiveId).then((count) => {
-      if (!cancelled) setDisagreementCount(count);
+    Promise.all([
+      countDisagreementsForCodebook(effectiveActiveId),
+      countIrrelevantReviews(effectiveActiveId),
+    ]).then(([disagreements, excluded]) => {
+      if (cancelled) return;
+      setDisagreementCount(disagreements);
+      setExcludedCount(excluded);
     });
     return () => {
       cancelled = true;
@@ -121,6 +128,12 @@ export function CodebookToolbar({
           className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
         >
           Disagreements{disagreementCount > 0 ? ` (${disagreementCount})` : ""}
+        </Link>
+        <Link
+          href={`${basePath}/codebooks/${active.id}/excluded`}
+          className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
+        >
+          Excluded{excludedCount > 0 ? ` (${excludedCount})` : ""}
         </Link>
         <Link
           href={`${basePath}/codebooks/${active.id}/analytics`}

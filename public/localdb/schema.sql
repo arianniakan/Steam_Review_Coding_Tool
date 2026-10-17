@@ -193,6 +193,20 @@ CREATE TABLE IF NOT EXISTS "RejectedSuggestion" (
 CREATE INDEX IF NOT EXISTS "RejectedSuggestion_reviewId_idx" ON "RejectedSuggestion"("reviewId");
 CREATE INDEX IF NOT EXISTS "RejectedSuggestion_codebookId_idx" ON "RejectedSuggestion"("codebookId");
 
+-- A row's existence is the exclusion — relevance is per-codebook, not
+-- global to the review, since a review irrelevant to one codebook's
+-- research question may be exactly what a different codebook wants. Unmark
+-- is a plain DELETE, not a toggle flag, so there's no stale state to track.
+CREATE TABLE IF NOT EXISTS "ReviewRelevance" (
+  "id" TEXT PRIMARY KEY,
+  "reviewId" TEXT NOT NULL REFERENCES "Review"("id") ON DELETE CASCADE,
+  "codebookId" TEXT NOT NULL REFERENCES "Codebook"("id") ON DELETE CASCADE,
+  "excludedAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE ("reviewId", "codebookId")
+);
+CREATE INDEX IF NOT EXISTS "ReviewRelevance_reviewId_idx" ON "ReviewRelevance"("reviewId");
+CREATE INDEX IF NOT EXISTS "ReviewRelevance_codebookId_idx" ON "ReviewRelevance"("codebookId");
+
 CREATE TABLE IF NOT EXISTS "Event" (
   "id" TEXT PRIMARY KEY,
   "gameId" TEXT NOT NULL REFERENCES "Game"("id") ON DELETE CASCADE,
