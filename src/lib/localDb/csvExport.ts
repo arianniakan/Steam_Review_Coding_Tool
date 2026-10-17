@@ -36,6 +36,7 @@ export async function exportCodebookCsv(
     "ai_rationale",
     "tagging_created_at",
     "review_text",
+    "training_bucket",
   ]);
 
   const rows = taggings.map((t) => {
@@ -58,6 +59,7 @@ export async function exportCodebookCsv(
       t.aiRationale,
       new Date(t.createdAt).toISOString(),
       t.reviewText,
+      t.trainingBucket ?? "",
     ]);
   });
 

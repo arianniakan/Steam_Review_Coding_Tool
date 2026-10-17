@@ -1,4 +1,5 @@
 import { getDb, newId } from "../client";
+import type { SplitBucket } from "./training";
 
 export interface TaggingWithCode {
   id: string;
@@ -114,6 +115,7 @@ export interface TaggingForExport extends TaggingWithCode {
   reviewPlaytimeForever: number;
   reviewTimestampCreated: string;
   reviewText: string;
+  trainingBucket: SplitBucket | null;
 }
 
 export async function listTaggingsForCodebookExport(
@@ -126,11 +128,14 @@ export async function listTaggingsForCodebookExport(
        r."votedUp" AS "reviewVotedUp",
        r."playtimeForever" AS "reviewPlaytimeForever",
        r."timestampCreated" AS "reviewTimestampCreated",
-       r."text" AS "reviewText"
+       r."text" AS "reviewText",
+       rsa."bucket" AS "trainingBucket"
      FROM "Tagging" t
      JOIN "Code" c ON c."id" = t."codeId"
      JOIN "Coder" co ON co."id" = t."coderId"
      JOIN "Review" r ON r."id" = t."reviewId"
+     JOIN "Codebook" cb ON cb."id" = c."codebookId"
+     LEFT JOIN "ReviewSplitAssignment" rsa ON rsa."reviewId" = t."reviewId" AND rsa."trainingId" = cb."trainingId"
      WHERE c."codebookId" = $1
      ORDER BY t."createdAt" ASC`,
     [codebookId],
