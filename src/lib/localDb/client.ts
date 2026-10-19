@@ -176,6 +176,15 @@ async function runMigrations(db: PGlite): Promise<void> {
       CREATE INDEX IF NOT EXISTS "ReviewRelevance_codebookId_idx" ON "ReviewRelevance"("codebookId");
     `);
   }
+
+  // Per-codebook system-prompt override for suggest-codes — null means use
+  // the shared DEFAULT_SUGGEST_CODES_SYSTEM_PROMPT. Editable/locked exactly
+  // like codes, carried forward by reviseCodebook.
+  if (!(await columnExists(db, "Codebook", "promptOverride"))) {
+    await db.exec(`
+      ALTER TABLE "Codebook" ADD COLUMN IF NOT EXISTS "promptOverride" TEXT;
+    `);
+  }
 }
 
 async function createClient(loadDataDir?: Blob | File): Promise<PGlite> {

@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS "Codebook" (
   "version" INTEGER NOT NULL DEFAULT 1,
   "previousVersionId" TEXT REFERENCES "Codebook"("id") ON DELETE SET NULL,
   "trainingId" TEXT REFERENCES "CodebookTraining"("id") ON DELETE SET NULL,
+  "promptOverride" TEXT,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT "Codebook_scope_check" CHECK (("gameId" IS NOT NULL) <> ("projectId" IS NOT NULL))
 );

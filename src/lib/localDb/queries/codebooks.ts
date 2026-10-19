@@ -1,5 +1,5 @@
 import { getDb, newId } from "../client";
-import { listCodesForCodebook } from "./codes";
+import { listCodesForCodebook, CodebookLockedError } from "./codes";
 
 export interface Codebook {
   id: string;
@@ -9,6 +9,7 @@ export interface Codebook {
   version: number;
   previousVersionId: string | null;
   trainingId: string | null;
+  promptOverride: string | null;
   createdAt: string;
 }
 
@@ -122,9 +123,18 @@ export async function reviseCodebook(codebookId: string): Promise<Codebook> {
   const newCodebookId = newId();
   await db.transaction(async (tx) => {
     await tx.query(
-      `INSERT INTO "Codebook" ("id", "gameId", "projectId", "name", "version", "previousVersionId", "trainingId")
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [newCodebookId, old.gameId, old.projectId, old.name, old.version + 1, old.id, old.trainingId],
+      `INSERT INTO "Codebook" ("id", "gameId", "projectId", "name", "version", "previousVersionId", "trainingId", "promptOverride")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        newCodebookId,
+        old.gameId,
+        old.projectId,
+        old.name,
+        old.version + 1,
+        old.id,
+        old.trainingId,
+        old.promptOverride,
+      ],
     );
     const idMap = new Map<string, string>();
     for (const code of oldCodes) {
@@ -158,6 +168,27 @@ async function db_getTrainingPhase(trainingId: string): Promise<string | null> {
     trainingId,
   ]);
   return result.rows[0]?.phase ?? null;
+}
+
+// Edited/locked exactly like codes (see CodeManager/createCode) — the
+// prompt is just another attribute of the current codebook version, frozen
+// once training is locked/verified, carried forward by reviseCodebook.
+export async function updateCodebookPrompt(
+  codebookId: string,
+  promptOverride: string | null,
+): Promise<Codebook> {
+  const existing = await getCodebookById(codebookId);
+  if (!existing) throw new Error("Codebook not found");
+  if (existing.trainingId) {
+    const phase = await db_getTrainingPhase(existing.trainingId);
+    if (phase === "locked" || phase === "verified") throw new CodebookLockedError();
+  }
+  const db = await getDb();
+  const result = await db.query<Codebook>(
+    `UPDATE "Codebook" SET "promptOverride" = $2 WHERE "id" = $1 RETURNING *`,
+    [codebookId, promptOverride],
+  );
+  return result.rows[0]!;
 }
 
 export async function getNextVersionCodebook(codebookId: string): Promise<Codebook | null> {

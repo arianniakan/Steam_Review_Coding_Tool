@@ -101,12 +101,14 @@ export function TagEditor({
   codebookId,
   codes,
   initialTaggings,
+  promptOverride,
 }: {
   reviewId: string;
   reviewText: string;
   codebookId: string;
   codes: Code[];
   initialTaggings: TaggingView[];
+  promptOverride?: string | null;
 }) {
   const textRef = useRef<HTMLParagraphElement>(null);
   const [selection, setSelection] = useState<TextSelection | null>(null);
@@ -192,7 +194,7 @@ export function TagEditor({
       const res = await fetch(`/api/reviews/${reviewId}/suggest-codes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reviewText, codes }),
+        body: JSON.stringify({ reviewText, codes, systemPromptOverride: promptOverride ?? undefined }),
       });
       const rateLimitQuota = parseRateLimitHeaders(res);
       if (rateLimitQuota) setQuota(rateLimitQuota);

@@ -294,6 +294,7 @@ export default function TrainingPage() {
       </p>
 
       <TrainingBucketPanel
+        promptOverride={codebook.promptOverride}
         trainingId={training.id}
         stepStart={1}
         bucketLabel="calibration sample"
@@ -327,6 +328,7 @@ export default function TrainingPage() {
 
       {training.phase !== "calibrating" && (
         <TrainingBucketPanel
+        promptOverride={codebook.promptOverride}
         trainingId={training.id}
           stepStart={4}
           bucketLabel="test set"
@@ -359,6 +361,7 @@ export default function TrainingPage() {
 
       {isLocked && (
         <TrainingBucketPanel
+        promptOverride={codebook.promptOverride}
         trainingId={training.id}
           stepStart={7}
           bucketLabel="verification set"
@@ -431,7 +434,7 @@ export default function TrainingPage() {
       })()}
 
       {training.phase === "verified" && (
-        <AutoCodeRestPanel training={training} gameIds={[gameId]} codebookId={codebookId} codes={codes} />
+        <AutoCodeRestPanel training={training} gameIds={[gameId]} codebookId={codebookId} codes={codes} promptOverride={codebook.promptOverride} />
       )}
     </main>
   );

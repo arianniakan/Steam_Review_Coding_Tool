@@ -26,12 +26,13 @@ export async function runIndependentAiPass(
   reviewId: string,
   reviewText: string,
   codes: { id: string; label: string; description: string; color: string }[],
+  systemPromptOverride?: string | null,
 ): Promise<IndependentPassResult> {
   try {
     const res = await fetch(`/api/reviews/${reviewId}/suggest-codes`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reviewText, codes }),
+      body: JSON.stringify({ reviewText, codes, systemPromptOverride: systemPromptOverride ?? undefined }),
     });
     const data = await res.json();
     if (!res.ok) {

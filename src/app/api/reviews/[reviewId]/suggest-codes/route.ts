@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { openai, OPENAI_MODEL } from "@/lib/openai";
 import { checkRateLimit, rateLimitHeaders, RATE_LIMIT_BUCKETS } from "@/lib/rateLimit";
+import { DEFAULT_SUGGEST_CODES_SYSTEM_PROMPT } from "@/lib/prompts";
 
 interface RawSuggestion {
   codeLabel: string;
@@ -18,6 +19,7 @@ interface IncomingCode {
 
 const MAX_REVIEW_CHARS = 10_000; // generous for a Steam review; bounds worst-case prompt size
 const MAX_CODES = 50;
+const MAX_SYSTEM_PROMPT_CHARS = 4_000; // same defensive-cap rationale as the two limits above
 
 // Stateless AI proxy — the local-first migration moved the database into
 // the browser, so this route no longer looks anything up itself. The
@@ -37,6 +39,8 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}) as Record<string, unknown>);
   const reviewText = typeof body.reviewText === "string" ? body.reviewText : "";
   const codes = Array.isArray(body.codes) ? (body.codes as IncomingCode[]) : [];
+  const systemPromptOverride =
+    typeof body.systemPromptOverride === "string" ? body.systemPromptOverride.trim() : "";
 
   if (!reviewText) {
     return NextResponse.json({ error: "reviewText is required" }, { status: 400, headers });
@@ -56,6 +60,9 @@ export async function POST(request: Request) {
       { status: 400, headers },
     );
   }
+  if (systemPromptOverride.length > MAX_SYSTEM_PROMPT_CHARS) {
+    return NextResponse.json({ error: "Custom prompt is too long" }, { status: 400, headers });
+  }
 
   // Alphabetical order so the model's highest-probability token isn't
   // skewed by creation order, per standard prompt-engineering guidance for
@@ -72,15 +79,7 @@ export async function POST(request: Request) {
       messages: [
         {
           role: "system",
-          content:
-            "You are assisting a qualitative researcher coding Steam game reviews. " +
-            "Given a codebook (a list of codes with descriptions defining when each applies) " +
-            "and a single review, propose codes that apply. For each suggestion, quote the " +
-            "exact verbatim substring of the review text that justifies the code (do not " +
-            "paraphrase — it must be an exact substring), give a one-sentence rationale tied " +
-            "to the code's description, and a confidence between 0 and 1. Only use codes from " +
-            "the given list. Propose zero suggestions if nothing in the review matches any code " +
-            "— do not force a fit.",
+          content: systemPromptOverride || DEFAULT_SUGGEST_CODES_SYSTEM_PROMPT,
         },
         {
           role: "user",
