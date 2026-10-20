@@ -2,6 +2,10 @@
 // route is what a researcher sees/edits in the UI, rather than a
 // hand-copied paraphrase that can drift out of sync.
 
+// Shared with the editor UI so the character counter matches the limit the
+// route actually enforces, instead of a second hand-copied number.
+export const MAX_SYSTEM_PROMPT_CHARS = 4_000;
+
 export const DEFAULT_SUGGEST_CODES_SYSTEM_PROMPT =
   "You are assisting a qualitative researcher coding Steam game reviews. " +
   "Given a codebook (a list of codes with descriptions defining when each applies) " +

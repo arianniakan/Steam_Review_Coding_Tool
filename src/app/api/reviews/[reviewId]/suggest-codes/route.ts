@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { openai, OPENAI_MODEL } from "@/lib/openai";
 import { checkRateLimit, rateLimitHeaders, RATE_LIMIT_BUCKETS } from "@/lib/rateLimit";
-import { DEFAULT_SUGGEST_CODES_SYSTEM_PROMPT } from "@/lib/prompts";
+import { DEFAULT_SUGGEST_CODES_SYSTEM_PROMPT, MAX_SYSTEM_PROMPT_CHARS } from "@/lib/prompts";
 
 interface RawSuggestion {
   codeLabel: string;
@@ -19,7 +19,6 @@ interface IncomingCode {
 
 const MAX_REVIEW_CHARS = 10_000; // generous for a Steam review; bounds worst-case prompt size
 const MAX_CODES = 50;
-const MAX_SYSTEM_PROMPT_CHARS = 4_000; // same defensive-cap rationale as the two limits above
 
 // Stateless AI proxy — the local-first migration moved the database into
 // the browser, so this route no longer looks anything up itself. The

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { updateCodebookPrompt } from "@/lib/localDb/queries/codebooks";
-import { DEFAULT_SUGGEST_CODES_SYSTEM_PROMPT } from "@/lib/prompts";
+import { DEFAULT_SUGGEST_CODES_SYSTEM_PROMPT, MAX_SYSTEM_PROMPT_CHARS } from "@/lib/prompts";
 
 // The paper's core procedure (Figure 1, Step 4) treats "revise codebook"
 // and "revise prompt" as two equally-weighted levers in the same loop —
@@ -23,8 +23,10 @@ export function CodebookPromptEditor({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(promptOverride ?? DEFAULT_SUGGEST_CODES_SYSTEM_PROMPT);
   const [saving, setSaving] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
 
   const effectivePrompt = promptOverride ?? DEFAULT_SUGGEST_CODES_SYSTEM_PROMPT;
+  const overLimit = draft.length > MAX_SYSTEM_PROMPT_CHARS;
 
   async function handleSave() {
     setSaving(true);
@@ -41,6 +43,10 @@ export function CodebookPromptEditor({
   }
 
   async function handleResetToDefault() {
+    if (!confirmingReset) {
+      setConfirmingReset(true);
+      return;
+    }
     setSaving(true);
     try {
       const updated = await updateCodebookPrompt(codebookId, null);
@@ -52,6 +58,7 @@ export function CodebookPromptEditor({
       toast.error(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setSaving(false);
+      setConfirmingReset(false);
     }
   }
 
@@ -71,13 +78,19 @@ export function CodebookPromptEditor({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             rows={8}
-            className="rounded border border-gray-300 p-2 font-mono text-xs"
+            className={`rounded border p-2 font-mono text-xs ${
+              overLimit ? "border-red-400" : "border-gray-300"
+            }`}
           />
+          <p className={`text-xs ${overLimit ? "text-red-600" : "text-gray-400"}`}>
+            {draft.length.toLocaleString()} / {MAX_SYSTEM_PROMPT_CHARS.toLocaleString()} characters
+            {overLimit && " — too long, trim before saving"}
+          </p>
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={handleSave}
-              disabled={saving}
+              disabled={saving || overLimit}
               className="rounded-lg bg-black px-4 py-1.5 text-sm text-white disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save"}
@@ -116,16 +129,36 @@ export function CodebookPromptEditor({
               >
                 Edit prompt →
               </button>
-              {promptOverride && (
-                <button
-                  type="button"
-                  onClick={handleResetToDefault}
-                  disabled={saving}
-                  className="text-xs text-gray-500 underline disabled:opacity-50"
-                >
-                  Reset to default
-                </button>
-              )}
+              {promptOverride &&
+                (confirmingReset ? (
+                  <span className="flex items-center gap-2 text-xs">
+                    <span className="text-gray-500">Discard the custom prompt?</span>
+                    <button
+                      type="button"
+                      onClick={handleResetToDefault}
+                      disabled={saving}
+                      className="text-red-600 underline disabled:opacity-50"
+                    >
+                      {saving ? "Resetting…" : "Yes, reset"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingReset(false)}
+                      disabled={saving}
+                      className="text-gray-500 underline disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleResetToDefault}
+                    className="text-xs text-gray-500 underline"
+                  >
+                    Reset to default
+                  </button>
+                ))}
             </div>
           )}
         </>
