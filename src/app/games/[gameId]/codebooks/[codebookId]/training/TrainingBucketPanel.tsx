@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { cohensKappa, interpretKappa } from "@/lib/kappa";
@@ -8,6 +8,8 @@ import { runIndependentAiPass } from "@/lib/independentAiPass";
 import { markAiAttempted } from "@/lib/localDb/queries/training";
 import type { Code } from "@/lib/localDb/queries/codes";
 import type { TaggingForAnalytics } from "@/lib/localDb/queries/taggings";
+import { RateLimitQuotaBar } from "@/components/RateLimitQuotaBar";
+import { fetchRateLimitStatus, type RateLimitQuota } from "@/lib/rateLimitClient";
 
 export interface BucketReview {
   id: string;
@@ -89,9 +91,16 @@ export function TrainingBucketPanel({
 }) {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [quota, setQuota] = useState<RateLimitQuota | null>(null);
 
   const { humanCodedIds, aiCodedIds, aiAttemptedIds, done, readyForAiPass, mismatches, reliability } =
     computeBucketStats(reviews, taggings, codes);
+
+  useEffect(() => {
+    fetchRateLimitStatus().then((status) => {
+      if (status) setQuota(status.suggestCodes);
+    });
+  }, []);
 
   async function handleRunAiPass() {
     setRunning(true);
@@ -101,6 +110,7 @@ export function TrainingBucketPanel({
     for (let i = 0; i < readyForAiPass.length; i++) {
       const r = readyForAiPass[i]!;
       const result = await runIndependentAiPass(r.reviewId, r.reviewText, codeInputs, promptOverride);
+      if (result.quota !== undefined) setQuota(result.quota);
       if (result.error) {
         failed++;
       } else {
@@ -176,6 +186,7 @@ export function TrainingBucketPanel({
               ? "Nothing new to code"
               : `Run on ${readyForAiPass.length} review(s)`}
         </button>
+        <RateLimitQuotaBar quota={quota} label="AI requests" />
       </section>
 
       {reliability && (

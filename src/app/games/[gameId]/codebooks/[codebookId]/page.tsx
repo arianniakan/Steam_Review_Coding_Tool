@@ -17,6 +17,7 @@ import {
 } from "@/lib/localDb/queries/codebooks";
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { getTrainingForCodebook } from "@/lib/localDb/queries/training";
+import { PageLoading } from "@/components/PageLoading";
 
 export default function CodebookDetailPage() {
   const { gameId, codebookId } = useParams<{ gameId: string; codebookId: string }>();
@@ -72,23 +73,19 @@ export default function CodebookDetailPage() {
   }
 
   if (loading) {
-    return (
-      <main className="mx-auto max-w-xl p-8">
-        <p className="text-sm text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageLoading />;
   }
 
   if (!codebook || !game) {
     return (
-      <main className="mx-auto max-w-xl p-8">
+      <main className="mx-auto max-w-xl p-4 sm:p-8">
         <p className="text-sm text-gray-500">Codebook not found.</p>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-xl p-8">
+    <main className="mx-auto max-w-xl p-4 sm:p-8">
       <Breadcrumbs
         items={[
           { label: "Games", href: "/games" },

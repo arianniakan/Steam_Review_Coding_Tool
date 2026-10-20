@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { SiteHeader } from "@/components/SiteHeader";
+import { SaveReminderBanner } from "@/components/SaveReminderBanner";
 import { Toaster } from "sonner";
 
 const geistSans = Geist({
@@ -27,6 +28,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col bg-gray-50">
         <SiteHeader />
+        <SaveReminderBanner />
         {children}
         <Toaster position="bottom-right" richColors closeButton />
       </body>

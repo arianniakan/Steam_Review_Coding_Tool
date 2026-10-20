@@ -26,6 +26,14 @@ const TAGGING_JOIN_SELECT = `
   co."kind" AS "coderKind"
 `;
 
+// Unscoped (every codebook, every game) — backs the app-wide "save your
+// work" reminder, which has no single codebook to key off of.
+export async function countAllTaggings(): Promise<number> {
+  const db = await getDb();
+  const result = await db.query<{ count: number }>(`SELECT COUNT(*)::int AS count FROM "Tagging"`);
+  return result.rows[0]?.count ?? 0;
+}
+
 export async function createTagging(data: {
   reviewId: string;
   codeId: string;

@@ -39,27 +39,58 @@ export async function POST(
 
   const details = await fetchAppDetails(appId);
 
-  const allReviews: SteamReview[] = [];
-  let cursor = "*";
-  let pagesFetched = 0;
-  let totalReviewsOnSteam = 0;
+  // Streamed as newline-delimited JSON rather than one final response —
+  // a 30-page fetch (each page politely delayed) can take long enough that
+  // a static "Ingesting…" button gave no sense of progress at all. The
+  // client reads this incrementally; the last line is always the real
+  // result, identical in shape to what this route used to return directly.
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      function send(obj: unknown) {
+        controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
+      }
+      const allReviews: SteamReview[] = [];
+      let cursor = "*";
+      let pagesFetched = 0;
+      let totalReviewsOnSteam = 0;
 
-  for (; pagesFetched < maxPages; pagesFetched++) {
-    const page = await fetchReviewPage(appId, cursor);
-    totalReviewsOnSteam = page.query_summary?.total_reviews ?? totalReviewsOnSteam;
-    if (!page.reviews || page.reviews.length === 0) break;
-    allReviews.push(...page.reviews);
-    if (page.cursor === cursor) break; // no forward progress — reached the end
-    cursor = page.cursor;
-    if (pagesFetched < maxPages - 1) await sleep(PAGE_DELAY_MS);
-  }
+      try {
+        for (; pagesFetched < maxPages; pagesFetched++) {
+          const page = await fetchReviewPage(appId, cursor);
+          totalReviewsOnSteam = page.query_summary?.total_reviews ?? totalReviewsOnSteam;
+          if (!page.reviews || page.reviews.length === 0) break;
+          allReviews.push(...page.reviews);
+          send({
+            type: "progress",
+            page: pagesFetched + 1,
+            maxPages,
+            reviewsSoFar: allReviews.length,
+            totalReviewsOnSteam,
+          });
+          if (page.cursor === cursor) break; // no forward progress — reached the end
+          cursor = page.cursor;
+          if (pagesFetched < maxPages - 1) await sleep(PAGE_DELAY_MS);
+        }
 
-  return NextResponse.json({
-    steamAppId: appId,
-    gameDetails: details,
-    reviews: allReviews,
-    pagesFetched,
-    hasMore: pagesFetched === maxPages,
-    totalReviewsOnSteam,
+        send({
+          type: "done",
+          steamAppId: appId,
+          gameDetails: details,
+          reviews: allReviews,
+          pagesFetched,
+          hasMore: pagesFetched === maxPages,
+          totalReviewsOnSteam,
+        });
+      } catch (err) {
+        send({ type: "error", error: err instanceof Error ? err.message : "Ingestion failed" });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: { "Content-Type": "application/x-ndjson; charset=utf-8" },
   });
 }

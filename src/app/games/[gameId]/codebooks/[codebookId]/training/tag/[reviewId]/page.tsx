@@ -9,6 +9,7 @@ import { getCodebookById, type Codebook } from "@/lib/localDb/queries/codebooks"
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { getReviewById, type Review } from "@/lib/localDb/queries/reviews";
 import { listTaggingsForReview, type TaggingWithCode } from "@/lib/localDb/queries/taggings";
+import { PageLoading } from "@/components/PageLoading";
 
 export default function TrainingTagPage() {
   const { gameId, codebookId, reviewId } = useParams<{ gameId: string; codebookId: string; reviewId: string }>();
@@ -40,23 +41,19 @@ export default function TrainingTagPage() {
   }, [codebookId, reviewId]);
 
   if (loading) {
-    return (
-      <main className="mx-auto max-w-2xl p-8">
-        <p className="text-sm text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageLoading />;
   }
 
   if (!codebook || !review) {
     return (
-      <main className="mx-auto max-w-2xl p-8">
+      <main className="mx-auto max-w-2xl p-4 sm:p-8">
         <p className="text-sm text-gray-500">Not found.</p>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-2xl p-8">
+    <main className="mx-auto max-w-2xl p-4 sm:p-8">
       <Breadcrumbs
         items={[
           { label: "Games", href: "/games" },

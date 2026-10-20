@@ -17,6 +17,13 @@ interface SteamIngestResponse {
   totalReviewsOnSteam: number;
 }
 
+interface IngestProgress {
+  page: number;
+  maxPages: number;
+  reviewsSoFar: number;
+  totalReviewsOnSteam: number;
+}
+
 interface IngestResult {
   gameId: string;
   gameName: string;
@@ -32,6 +39,7 @@ export default function IngestPage() {
   const [appId, setAppId] = useState("");
   const [maxPages, setMaxPages] = useState(10);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<IngestProgress | null>(null);
   const [result, setResult] = useState<IngestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,6 +53,7 @@ export default function IngestPage() {
       return;
     }
     setLoading(true);
+    setProgress(null);
     setError(null);
     setResult(null);
     try {
@@ -53,8 +62,45 @@ export default function IngestPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ maxPages }),
       });
-      const data = (await res.json()) as SteamIngestResponse & { error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Ingestion failed");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}) as { error?: string });
+        throw new Error(data.error ?? "Ingestion failed");
+      }
+      if (!res.body) throw new Error("Ingestion failed — empty response");
+
+      // Streamed as newline-delimited JSON so the UI can show live
+      // page-by-page progress instead of a static "Ingesting…" label for
+      // what can be a multi-second, multi-page fetch.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let data: (SteamIngestResponse & { error?: string }) | null = null;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex: number;
+        while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, newlineIndex);
+          buffer = buffer.slice(newlineIndex + 1);
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line);
+          if (msg.type === "progress") {
+            setProgress({
+              page: msg.page,
+              maxPages: msg.maxPages,
+              reviewsSoFar: msg.reviewsSoFar,
+              totalReviewsOnSteam: msg.totalReviewsOnSteam,
+            });
+          } else if (msg.type === "done") {
+            data = msg;
+          } else if (msg.type === "error") {
+            throw new Error(msg.error ?? "Ingestion failed");
+          }
+        }
+      }
+      if (!data) throw new Error("Ingestion ended unexpectedly");
 
       const game = await upsertGameFromSteam(data.steamAppId, data.gameDetails);
 
@@ -106,7 +152,7 @@ export default function IngestPage() {
   }
 
   return (
-    <main className="mx-auto max-w-xl p-8">
+    <main className="mx-auto max-w-xl p-4 sm:p-8">
       <Breadcrumbs items={[{ label: "Ingest" }]} />
       <div className="mt-2">
         <BackButton href="/" label="Home" />
@@ -148,8 +194,20 @@ export default function IngestPage() {
           disabled={loading}
           className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50"
         >
-          {loading ? "Ingesting…" : "Ingest reviews"}
+          {loading
+            ? progress
+              ? `Fetching page ${progress.page} of ${progress.maxPages} (${progress.reviewsSoFar} reviews so far)…`
+              : "Ingesting…"
+            : "Ingest reviews"}
         </button>
+        {loading && progress && (
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+            <div
+              className="h-full rounded-full bg-gray-600 transition-[width]"
+              style={{ width: `${Math.min(100, (progress.page / progress.maxPages) * 100)}%` }}
+            />
+          </div>
+        )}
       </form>
 
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}

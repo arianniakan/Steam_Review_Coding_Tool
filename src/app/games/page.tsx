@@ -14,7 +14,7 @@ export default function GamesPage() {
   }, []);
 
   return (
-    <main className="mx-auto max-w-2xl p-8">
+    <main className="mx-auto max-w-2xl p-4 sm:p-8">
       <Breadcrumbs items={[{ label: "Games" }]} />
       <div className="mt-2">
         <BackButton href="/" label="Home" />

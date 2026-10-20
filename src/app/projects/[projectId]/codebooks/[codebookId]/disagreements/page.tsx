@@ -11,6 +11,7 @@ import {
   listDisagreementsForCodebook,
   type DisagreementRow,
 } from "@/lib/localDb/queries/rejectedSuggestions";
+import { PageLoading } from "@/components/PageLoading";
 
 export default function ProjectDisagreementsPage() {
   const { projectId, codebookId } = useParams<{ projectId: string; codebookId: string }>();
@@ -48,23 +49,19 @@ export default function ProjectDisagreementsPage() {
   }, [projectId, codebookId]);
 
   if (loading) {
-    return (
-      <main className="mx-auto max-w-3xl p-8">
-        <p className="text-sm text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageLoading />;
   }
 
   if (!codebook || !project) {
     return (
-      <main className="mx-auto max-w-3xl p-8">
+      <main className="mx-auto max-w-3xl p-4 sm:p-8">
         <p className="text-sm text-gray-500">Codebook not found.</p>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="mx-auto max-w-3xl p-4 sm:p-8">
       <Breadcrumbs
         items={[
           { label: "Projects", href: "/projects" },

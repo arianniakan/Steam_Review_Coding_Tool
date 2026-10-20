@@ -21,3 +21,12 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
+
+/* body is a column flex container (see layout.tsx) — without this, a flex
+   item's default min-width:auto lets any single wide, non-wrapping
+   descendant (a long select, a nowrap button label, etc.) force <main>
+   wider than the viewport instead of shrinking to it, causing real
+   horizontal page scroll on narrow screens. */
+main {
+  min-width: 0;
+}

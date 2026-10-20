@@ -13,6 +13,7 @@ import { getCodebookById, type Codebook } from "@/lib/localDb/queries/codebooks"
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { listTaggingsForCodebookAnalytics, type TaggingForAnalytics } from "@/lib/localDb/queries/taggings";
 import { listEventsForGame, type Event } from "@/lib/localDb/queries/events";
+import { PageLoading } from "@/components/PageLoading";
 
 function monthKey(d: string | Date) {
   return new Date(d).toISOString().slice(0, 7); // YYYY-MM
@@ -57,16 +58,12 @@ export default function AnalyticsPage() {
   }, [gameId, codebookId]);
 
   if (loading) {
-    return (
-      <main className="mx-auto max-w-3xl p-8">
-        <p className="text-sm text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageLoading />;
   }
 
   if (!codebook || !game) {
     return (
-      <main className="mx-auto max-w-3xl p-8">
+      <main className="mx-auto max-w-3xl p-4 sm:p-8">
         <p className="text-sm text-gray-500">Codebook not found.</p>
       </main>
     );
@@ -140,7 +137,7 @@ export default function AnalyticsPage() {
   const months = [...monthsSet].sort();
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="mx-auto max-w-3xl p-4 sm:p-8">
       <Breadcrumbs
         items={[
           { label: "Games", href: "/games" },

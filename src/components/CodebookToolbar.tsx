@@ -98,12 +98,12 @@ export function CodebookToolbar({
   return (
     <div className="mt-2 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-3">
       {/* Selecting and configuring the codebook itself */}
-      <div className="flex items-center gap-2 text-sm">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
         <span className="text-gray-500">Codebook:</span>
         <select
           value={active.id}
           onChange={(e) => handleSelectChange(e.target.value)}
-          className="rounded border border-gray-300 px-2 py-1.5"
+          className="max-w-full rounded border border-gray-300 px-2 py-1.5"
         >
           {codebooks.map((cb) => (
             <option key={cb.id} value={cb.id}>
@@ -114,6 +114,7 @@ export function CodebookToolbar({
         </select>
         <Link
           href={`${basePath}/codebooks/${active.id}`}
+          title="Edit this codebook's codes and AI prompt, or start/continue its Train & Auto-Code pipeline"
           className="text-xs text-gray-500 underline hover:text-gray-900"
         >
           Manage codes
@@ -122,21 +123,24 @@ export function CodebookToolbar({
 
       {/* Results for the selected codebook — a distinct group, not more
           options in the same row as the selector above */}
-      <div className="flex items-center gap-2 border-l border-gray-200 pl-4">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 border-l border-gray-200 pl-4">
         <Link
           href={`${basePath}/codebooks/${active.id}/disagreements`}
+          title="Every AI suggestion a human rejected, for examining failure modes"
           className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
         >
           Disagreements{disagreementCount > 0 ? ` (${disagreementCount})` : ""}
         </Link>
         <Link
           href={`${basePath}/codebooks/${active.id}/excluded`}
+          title="Reviews marked not relevant to this codebook — hidden from the normal list, reversible"
           className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
         >
           Excluded{excludedCount > 0 ? ` (${excludedCount})` : ""}
         </Link>
         <Link
           href={`${basePath}/codebooks/${active.id}/analytics`}
+          title="Human/AI agreement (Cohen's kappa), code frequency, and co-occurrence for this codebook"
           className="rounded-lg border border-gray-900 px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
         >
           Analytics
@@ -144,6 +148,7 @@ export function CodebookToolbar({
         <button
           type="button"
           onClick={() => exportCodebookCsv(active.id, contextName, active.name)}
+          title="Download every tagging for this codebook as a CSV file"
           className="rounded-lg bg-black px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-800"
         >
           Export CSV

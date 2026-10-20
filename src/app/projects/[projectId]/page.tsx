@@ -18,6 +18,7 @@ import {
 } from "@/lib/localDb/queries/projects";
 import { listCodebooksForProject, type Codebook } from "@/lib/localDb/queries/codebooks";
 import type { Game } from "@/lib/localDb/queries/games";
+import { PageLoading } from "@/components/PageLoading";
 
 export default function ProjectPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -88,22 +89,18 @@ export default function ProjectPage() {
   }
 
   if (loading) {
-    return (
-      <main className="mx-auto max-w-2xl p-8">
-        <p className="text-sm text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageLoading />;
   }
   if (!project) {
     return (
-      <main className="mx-auto max-w-2xl p-8">
+      <main className="mx-auto max-w-2xl p-4 sm:p-8">
         <p className="text-sm text-gray-500">Project not found.</p>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-2xl p-8">
+    <main className="mx-auto max-w-2xl p-4 sm:p-8">
       <Breadcrumbs items={[{ label: "Projects", href: "/projects" }, { label: project.name }]} />
       <div className="mt-2">
         <BackButton href="/projects" label="Projects" />

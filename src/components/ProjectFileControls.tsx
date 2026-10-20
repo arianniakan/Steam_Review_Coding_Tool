@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { exportProject, importProject } from "@/lib/localDb/projectFile";
+import { countAllTaggings } from "@/lib/localDb/queries/taggings";
+import { recordProjectSaved } from "@/lib/saveReminder";
 
 export function ProjectFileControls() {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -12,6 +14,10 @@ export function ProjectFileControls() {
     setBusy(true);
     try {
       await exportProject();
+      // Keeps the save reminder's threshold in sync regardless of which of
+      // the two "save" entry points (this button, or the banner itself)
+      // the researcher actually used.
+      recordProjectSaved(await countAllTaggings());
       toast.success("Project saved");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save project");
@@ -38,6 +44,10 @@ export function ProjectFileControls() {
     setBusy(true);
     try {
       await importProject(file);
+      // A freshly-opened file is, by definition, already saved — otherwise
+      // the previous project's leftover count could immediately misfire
+      // the reminder (or wrongly suppress it) against this new one's data.
+      recordProjectSaved(await countAllTaggings());
       toast.success("Project loaded — reloading…");
       window.location.href = "/";
     } catch (err) {

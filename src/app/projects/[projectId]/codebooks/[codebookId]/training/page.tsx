@@ -11,6 +11,7 @@ import {
   type BucketReview,
 } from "@/app/games/[gameId]/codebooks/[codebookId]/training/TrainingBucketPanel";
 import { AutoCodeRestPanel } from "@/app/games/[gameId]/codebooks/[codebookId]/training/AutoCodeRestPanel";
+import { TrainingSteps } from "@/app/games/[gameId]/codebooks/[codebookId]/training/TrainingSteps";
 import { getCodebookById, reviseCodebook, type Codebook } from "@/lib/localDb/queries/codebooks";
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { listGamesForProject } from "@/lib/localDb/queries/projects";
@@ -26,6 +27,7 @@ import {
   type SplitBucket,
 } from "@/lib/localDb/queries/training";
 import { listTaggingsForCodebookAnalytics, type TaggingForAnalytics } from "@/lib/localDb/queries/taggings";
+import { PageLoading } from "@/components/PageLoading";
 
 const DEFAULT_CALIBRATION_SIZE = 20;
 const DEFAULT_HELD_OUT_PERCENT = 30;
@@ -60,6 +62,7 @@ export default function ProjectTrainingPage() {
   const [revising, setRevising] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [locking, setLocking] = useState(false);
+  const [confirmingLock, setConfirmingLock] = useState(false);
   const [verifying, setVerifying] = useState(false);
 
   async function load() {
@@ -153,6 +156,10 @@ export default function ProjectTrainingPage() {
 
   async function handleLock() {
     if (!training) return;
+    if (!confirmingLock) {
+      setConfirmingLock(true);
+      return;
+    }
     setLocking(true);
     try {
       await lockTraining(training.id);
@@ -162,6 +169,7 @@ export default function ProjectTrainingPage() {
       toast.error(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLocking(false);
+      setConfirmingLock(false);
     }
   }
 
@@ -180,15 +188,11 @@ export default function ProjectTrainingPage() {
   }
 
   if (loading) {
-    return (
-      <main className="mx-auto max-w-2xl p-8">
-        <p className="text-sm text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageLoading />;
   }
   if (!codebook) {
     return (
-      <main className="mx-auto max-w-2xl p-8">
+      <main className="mx-auto max-w-2xl p-4 sm:p-8">
         <p className="text-sm text-gray-500">Codebook not found.</p>
       </main>
     );
@@ -203,7 +207,7 @@ export default function ProjectTrainingPage() {
 
   if (!training) {
     return (
-      <main className="mx-auto max-w-xl p-8">
+      <main className="mx-auto max-w-xl p-4 sm:p-8">
         <Breadcrumbs items={breadcrumbItems} />
         <div className="mt-2">
           <BackButton href={`/projects/${projectId}/codebooks/${codebookId}`} label={codebook.name} />
@@ -281,7 +285,7 @@ export default function ProjectTrainingPage() {
   const isLocked = training.phase === "locked" || training.phase === "verified";
 
   return (
-    <main className="mx-auto max-w-2xl p-8">
+    <main className="mx-auto max-w-2xl p-4 sm:p-8">
       <Breadcrumbs items={breadcrumbItems} />
       <div className="mt-2">
         <BackButton href={`/projects/${projectId}/codebooks/${codebookId}`} label={codebook.name} />
@@ -314,6 +318,7 @@ export default function ProjectTrainingPage() {
         {counts.test} test{training.phase === "calibrating" ? " (reserved)" : ""} · {counts.verification} verification
         (reserved)
       </p>
+      <TrainingSteps phase={training.phase} />
 
       <TrainingBucketPanel
         promptOverride={codebook.promptOverride}
@@ -372,14 +377,37 @@ export default function ProjectTrainingPage() {
             Stops further codebook edits and revisions. This can&apos;t be undone — a failed
             verification later means starting a fresh training, not reopening this one.
           </p>
-          <button
-            type="button"
-            onClick={handleLock}
-            disabled={locking}
-            className="mt-3 rounded-lg bg-black px-4 py-1.5 text-sm text-white disabled:opacity-50"
-          >
-            {locking ? "Locking…" : "Lock codebook for validation →"}
-          </button>
+          {confirmingLock ? (
+            <div className="mt-3 flex items-center gap-3">
+              <span className="text-sm text-red-600">
+                This is permanent for this training — lock anyway?
+              </span>
+              <button
+                type="button"
+                onClick={handleLock}
+                disabled={locking}
+                className="rounded-lg bg-red-600 px-4 py-1.5 text-sm text-white disabled:opacity-50"
+              >
+                {locking ? "Locking…" : "Yes, lock it"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingLock(false)}
+                disabled={locking}
+                className="text-sm text-gray-500 underline disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleLock}
+              className="mt-3 rounded-lg bg-black px-4 py-1.5 text-sm text-white disabled:opacity-50"
+            >
+              Lock codebook for validation →
+            </button>
+          )}
         </section>
       )}
 

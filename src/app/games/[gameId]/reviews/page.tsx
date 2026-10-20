@@ -28,6 +28,7 @@ import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
 import { ExpandableText } from "@/components/ExpandableText";
 import { CodebookToolbar } from "@/components/CodebookToolbar";
+import { PageLoading } from "@/components/PageLoading";
 
 export default function ReviewsPage() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -129,22 +130,18 @@ export default function ReviewsPage() {
   if (activeCodebookId) tagQuery.set("codebookId", activeCodebookId);
 
   if (game === undefined || loading) {
-    return (
-      <main className="mx-auto max-w-3xl p-8">
-        <p className="text-sm text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageLoading />;
   }
   if (game === null) {
     return (
-      <main className="mx-auto max-w-3xl p-8">
+      <main className="mx-auto max-w-3xl p-4 sm:p-8">
         <p className="text-sm text-gray-500">Game not found.</p>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="mx-auto max-w-3xl p-4 sm:p-8">
       <Breadcrumbs
         items={[
           { label: "Games", href: "/games" },
@@ -155,7 +152,7 @@ export default function ReviewsPage() {
         <BackButton href="/games" label="Games" />
       </div>
 
-      <div className="mt-2 flex gap-4 rounded-xl border border-gray-200 bg-white shadow-sm p-4">
+      <div className="mt-2 flex gap-4 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm p-4">
         {game.headerImage && (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -165,7 +162,7 @@ export default function ReviewsPage() {
           />
         )}
         <div className="min-w-0">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h1 className="text-2xl font-semibold">{game.name}</h1>
             <Link href={`/games/${gameId}/codebooks`} className="shrink-0 text-sm underline">
               All codebooks →
