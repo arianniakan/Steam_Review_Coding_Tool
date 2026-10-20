@@ -11,6 +11,9 @@ import { getGameById, type Game } from "@/lib/localDb/queries/games";
 import { listCodebooksForGame, type CodebookWithCodeCount } from "@/lib/localDb/queries/codebooks";
 import { groupReviewsByLanguage } from "@/lib/localDb/queries/reviews";
 import { listSavedSamplesForGame, type SavedSample } from "@/lib/localDb/queries/savedSamples";
+import { getTrainingForCodebook, type TrainingPhase } from "@/lib/localDb/queries/training";
+import { PageLoading } from "@/components/PageLoading";
+import { TrainingPhaseBadge } from "@/components/TrainingPhaseBadge";
 
 export default function CodebooksPage() {
   const { gameId } = useParams<{ gameId: string }>();
@@ -19,6 +22,7 @@ export default function CodebooksPage() {
   const [codebooks, setCodebooks] = useState<CodebookWithCodeCount[]>([]);
   const [languages, setLanguages] = useState<{ language: string; count: number }[]>([]);
   const [savedSamples, setSavedSamples] = useState<SavedSample[]>([]);
+  const [phases, setPhases] = useState<Record<string, TrainingPhase | null>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -34,6 +38,11 @@ export default function CodebooksPage() {
       setCodebooks(cbs);
       setLanguages(langs);
       setSavedSamples(samples);
+      const phaseEntries = await Promise.all(
+        cbs.map(async (cb) => [cb.id, (await getTrainingForCodebook(cb.id))?.phase ?? null] as const),
+      );
+      if (cancelled) return;
+      setPhases(Object.fromEntries(phaseEntries));
       setLoading(false);
     })();
     return () => {
@@ -42,23 +51,19 @@ export default function CodebooksPage() {
   }, [gameId]);
 
   if (loading) {
-    return (
-      <main className="mx-auto max-w-xl p-8">
-        <p className="text-sm text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageLoading />;
   }
 
   if (!game) {
     return (
-      <main className="mx-auto max-w-xl p-8">
+      <main className="mx-auto max-w-xl p-4 sm:p-8">
         <p className="text-sm text-gray-500">Game not found.</p>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-xl p-8">
+    <main className="mx-auto max-w-xl p-4 sm:p-8">
       <Breadcrumbs
         items={[
           { label: "Games", href: "/games" },
@@ -84,8 +89,11 @@ export default function CodebooksPage() {
               <span>
                 {cb.name} <span className="text-xs text-gray-400">v{cb.version}</span>
               </span>
-              <span className="text-gray-500">
-                {cb.codeCount} code{cb.codeCount === 1 ? "" : "s"}
+              <span className="flex items-center gap-2">
+                <TrainingPhaseBadge phase={phases[cb.id] ?? null} />
+                <span className="text-gray-500">
+                  {cb.codeCount} code{cb.codeCount === 1 ? "" : "s"}
+                </span>
               </span>
             </Link>
           </li>

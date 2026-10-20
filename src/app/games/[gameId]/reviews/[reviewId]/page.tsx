@@ -20,6 +20,7 @@ import {
   unmarkReviewIrrelevant,
 } from "@/lib/localDb/queries/reviewRelevance";
 import { resolveActiveCodebookId } from "@/lib/activeCodebook";
+import { PageLoading } from "@/components/PageLoading";
 
 type SearchParams = ReviewSearchParams & { codebookId?: string };
 
@@ -97,16 +98,12 @@ export default function ReviewDetailPage() {
   ];
 
   if (loading) {
-    return (
-      <main className="mx-auto max-w-2xl p-8">
-        <p className="text-sm text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageLoading />;
   }
 
   if (!game || !review) {
     return (
-      <main className="mx-auto max-w-2xl p-8">
+      <main className="mx-auto max-w-2xl p-4 sm:p-8">
         <p className="text-sm text-gray-500">Review not found.</p>
       </main>
     );
@@ -114,7 +111,7 @@ export default function ReviewDetailPage() {
 
   if (codebooks.length === 0) {
     return (
-      <main className="mx-auto max-w-2xl p-8">
+      <main className="mx-auto max-w-2xl p-4 sm:p-8">
         <Breadcrumbs items={breadcrumbItems} />
         <div className="mt-2">
           <BackButton href={`/games/${gameId}/reviews`} label="Reviews" />
@@ -151,7 +148,7 @@ export default function ReviewDetailPage() {
   if (activeCodebookId) navQuery.set("codebookId", activeCodebookId);
 
   return (
-    <main className="mx-auto max-w-2xl p-8">
+    <main className="mx-auto max-w-2xl p-4 sm:p-8">
       <Breadcrumbs items={breadcrumbItems} />
 
       <div className="mt-2">

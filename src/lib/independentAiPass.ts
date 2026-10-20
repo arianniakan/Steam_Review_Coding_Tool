@@ -1,5 +1,6 @@
 import { getAiCoder } from "./localDb/queries/coders";
 import { createTagging } from "./localDb/queries/taggings";
+import { parseRateLimitHeaders, type RateLimitQuota } from "./rateLimitClient";
 
 interface RawSuggestion {
   codeId: string;
@@ -13,6 +14,11 @@ export interface IndependentPassResult {
   reviewId: string;
   taggingCount: number;
   error?: string;
+  // Lets a batch-driving caller (TrainingBucketPanel, AutoCodeRestPanel) show
+  // a live quota bar the same way TagEditor's single-call path already does,
+  // instead of looping through a whole bucket with zero visibility into how
+  // close it is to a 429.
+  quota?: RateLimitQuota | null;
 }
 
 // Runs the AI on a review entirely on its own — no accept/reject step —
@@ -34,9 +40,10 @@ export async function runIndependentAiPass(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ reviewText, codes, systemPromptOverride: systemPromptOverride ?? undefined }),
     });
+    const quota = parseRateLimitHeaders(res);
     const data = await res.json();
     if (!res.ok) {
-      return { reviewId, taggingCount: 0, error: data.error ?? `Request failed (${res.status})` };
+      return { reviewId, taggingCount: 0, error: data.error ?? `Request failed (${res.status})`, quota };
     }
 
     const coder = await getAiCoder();
@@ -53,7 +60,7 @@ export async function runIndependentAiPass(
         aiRationale: s.rationale,
       });
     }
-    return { reviewId, taggingCount: suggestions.length };
+    return { reviewId, taggingCount: suggestions.length, quota };
   } catch (err) {
     return {
       reviewId,

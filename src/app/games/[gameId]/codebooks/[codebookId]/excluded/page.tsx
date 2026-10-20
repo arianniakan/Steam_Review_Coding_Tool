@@ -12,6 +12,7 @@ import {
   unmarkReviewIrrelevant,
   type ExcludedReviewRow,
 } from "@/lib/localDb/queries/reviewRelevance";
+import { PageLoading } from "@/components/PageLoading";
 
 export default function ExcludedReviewsPage() {
   const { gameId, codebookId } = useParams<{ gameId: string; codebookId: string }>();
@@ -45,23 +46,19 @@ export default function ExcludedReviewsPage() {
   }
 
   if (loading) {
-    return (
-      <main className="mx-auto max-w-3xl p-8">
-        <p className="text-sm text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageLoading />;
   }
 
   if (!codebook || !game) {
     return (
-      <main className="mx-auto max-w-3xl p-8">
+      <main className="mx-auto max-w-3xl p-4 sm:p-8">
         <p className="text-sm text-gray-500">Codebook not found.</p>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="mx-auto max-w-3xl p-4 sm:p-8">
       <Breadcrumbs
         items={[
           { label: "Games", href: "/games" },

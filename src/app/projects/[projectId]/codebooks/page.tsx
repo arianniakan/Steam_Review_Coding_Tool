@@ -11,6 +11,9 @@ import { getProjectById, listGamesForProject, type Project } from "@/lib/localDb
 import { listCodebooksForProject, type CodebookWithCodeCount } from "@/lib/localDb/queries/codebooks";
 import { groupReviewsByLanguage } from "@/lib/localDb/queries/reviews";
 import type { Game } from "@/lib/localDb/queries/games";
+import { getTrainingForCodebook, type TrainingPhase } from "@/lib/localDb/queries/training";
+import { PageLoading } from "@/components/PageLoading";
+import { TrainingPhaseBadge } from "@/components/TrainingPhaseBadge";
 
 export default function ProjectCodebooksPage() {
   const { projectId } = useParams<{ projectId: string }>();
@@ -19,6 +22,7 @@ export default function ProjectCodebooksPage() {
   const [games, setGames] = useState<Game[]>([]);
   const [codebooks, setCodebooks] = useState<CodebookWithCodeCount[]>([]);
   const [languages, setLanguages] = useState<{ language: string; count: number }[]>([]);
+  const [phases, setPhases] = useState<Record<string, TrainingPhase | null>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +41,11 @@ export default function ProjectCodebooksPage() {
         if (cancelled) return;
         setLanguages(langs);
       }
+      const phaseEntries = await Promise.all(
+        cbs.map(async (cb) => [cb.id, (await getTrainingForCodebook(cb.id))?.phase ?? null] as const),
+      );
+      if (cancelled) return;
+      setPhases(Object.fromEntries(phaseEntries));
       setLoading(false);
     })();
     return () => {
@@ -45,22 +54,18 @@ export default function ProjectCodebooksPage() {
   }, [projectId]);
 
   if (loading) {
-    return (
-      <main className="mx-auto max-w-xl p-8">
-        <p className="text-sm text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageLoading />;
   }
   if (!project) {
     return (
-      <main className="mx-auto max-w-xl p-8">
+      <main className="mx-auto max-w-xl p-4 sm:p-8">
         <p className="text-sm text-gray-500">Project not found.</p>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-xl p-8">
+    <main className="mx-auto max-w-xl p-4 sm:p-8">
       <Breadcrumbs items={[{ label: "Projects", href: "/projects" }, { label: project.name, href: `/projects/${projectId}` }]} />
       <div className="mt-2">
         <BackButton href={`/projects/${projectId}`} label={project.name} />
@@ -81,8 +86,11 @@ export default function ProjectCodebooksPage() {
               <span>
                 {cb.name} <span className="text-xs text-gray-400">v{cb.version}</span>
               </span>
-              <span className="text-gray-500">
-                {cb.codeCount} code{cb.codeCount === 1 ? "" : "s"}
+              <span className="flex items-center gap-2">
+                <TrainingPhaseBadge phase={phases[cb.id] ?? null} />
+                <span className="text-gray-500">
+                  {cb.codeCount} code{cb.codeCount === 1 ? "" : "s"}
+                </span>
               </span>
             </Link>
           </li>

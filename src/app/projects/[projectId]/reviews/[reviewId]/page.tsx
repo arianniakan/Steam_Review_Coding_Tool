@@ -19,6 +19,7 @@ import {
   unmarkReviewIrrelevant,
 } from "@/lib/localDb/queries/reviewRelevance";
 import { resolveActiveProjectCodebookId } from "@/lib/activeCodebook";
+import { PageLoading } from "@/components/PageLoading";
 
 export default function ProjectReviewDetailPage() {
   const { projectId, reviewId } = useParams<{ projectId: string; reviewId: string }>();
@@ -98,16 +99,12 @@ export default function ProjectReviewDetailPage() {
   ];
 
   if (loading) {
-    return (
-      <main className="mx-auto max-w-2xl p-8">
-        <p className="text-sm text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageLoading />;
   }
 
   if (!project || !review) {
     return (
-      <main className="mx-auto max-w-2xl p-8">
+      <main className="mx-auto max-w-2xl p-4 sm:p-8">
         <p className="text-sm text-gray-500">Review not found.</p>
       </main>
     );
@@ -115,7 +112,7 @@ export default function ProjectReviewDetailPage() {
 
   if (codebooks.length === 0) {
     return (
-      <main className="mx-auto max-w-2xl p-8">
+      <main className="mx-auto max-w-2xl p-4 sm:p-8">
         <Breadcrumbs items={breadcrumbItems} />
         <div className="mt-2">
           <BackButton href={backHref} label="Reviews" />
@@ -131,7 +128,7 @@ export default function ProjectReviewDetailPage() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl p-8">
+    <main className="mx-auto max-w-2xl p-4 sm:p-8">
       <Breadcrumbs items={breadcrumbItems} />
 
       <div className="mt-2">

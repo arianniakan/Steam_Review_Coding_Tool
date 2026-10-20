@@ -10,6 +10,8 @@ import {
   type UntrainedReview,
 } from "@/lib/localDb/queries/training";
 import type { Code } from "@/lib/localDb/queries/codes";
+import { RateLimitQuotaBar } from "@/components/RateLimitQuotaBar";
+import { fetchRateLimitStatus, type RateLimitQuota } from "@/lib/rateLimitClient";
 
 const DEFAULT_BATCH_SIZE = 25;
 
@@ -36,6 +38,13 @@ export function AutoCodeRestPanel({
   const [batchSize, setBatchSize] = useState(DEFAULT_BATCH_SIZE);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [quota, setQuota] = useState<RateLimitQuota | null>(null);
+
+  useEffect(() => {
+    fetchRateLimitStatus().then((status) => {
+      if (status) setQuota(status.suggestCodes);
+    });
+  }, []);
 
   async function load() {
     const [reviews, batchSizeRes] = await Promise.all([
@@ -63,6 +72,7 @@ export function AutoCodeRestPanel({
     for (let i = 0; i < batch.length; i++) {
       const r = batch[i]!;
       const result = await runIndependentAiPass(r.reviewId, r.reviewText, codeInputs, promptOverride);
+      if (result.quota !== undefined) setQuota(result.quota);
       if (result.error) {
         failed++;
       } else {
@@ -126,6 +136,7 @@ export function AutoCodeRestPanel({
             : `Run next ${batch.length} review(s) →`}
         </button>
       )}
+      <RateLimitQuotaBar quota={quota} label="AI requests" />
     </section>
   );
 }

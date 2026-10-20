@@ -26,6 +26,7 @@ import {
 } from "@/lib/localDb/queries/reviewRelevance";
 import { resolveActiveProjectCodebookId } from "@/lib/activeCodebook";
 import type { Game } from "@/lib/localDb/queries/games";
+import { PageLoading } from "@/components/PageLoading";
 
 const DEFAULT_PER_GAME = 5;
 
@@ -161,22 +162,18 @@ export default function ProjectMixedReviewsPage() {
   if (activeCodebookId) tagQuery.set("codebookId", activeCodebookId);
 
   if (project === undefined || loading) {
-    return (
-      <main className="mx-auto max-w-3xl p-8">
-        <p className="text-sm text-gray-500">Loading…</p>
-      </main>
-    );
+    return <PageLoading />;
   }
   if (project === null) {
     return (
-      <main className="mx-auto max-w-3xl p-8">
+      <main className="mx-auto max-w-3xl p-4 sm:p-8">
         <p className="text-sm text-gray-500">Project not found.</p>
       </main>
     );
   }
   if (games.length === 0) {
     return (
-      <main className="mx-auto max-w-3xl p-8">
+      <main className="mx-auto max-w-3xl p-4 sm:p-8">
         <Breadcrumbs items={[{ label: "Projects", href: "/projects" }, { label: project.name }]} />
         <div className="mt-2">
           <BackButton href={`/projects/${projectId}`} label={project.name} />
@@ -193,7 +190,7 @@ export default function ProjectMixedReviewsPage() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl p-8">
+    <main className="mx-auto max-w-3xl p-4 sm:p-8">
       <Breadcrumbs
         items={[
           { label: "Projects", href: "/projects" },

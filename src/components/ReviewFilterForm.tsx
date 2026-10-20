@@ -1,10 +1,28 @@
 import { PLAYTIME_TIERS } from "@/lib/playtimeTiers";
 import { SORT_OPTIONS, type ReviewSearchParams } from "@/lib/localDb/queries/reviewFilters";
 
+const FILTER_KEYS = [
+  "voted",
+  "purchase",
+  "earlyAccess",
+  "playtime",
+  "language",
+  "from",
+  "to",
+  "minVotes",
+  "minLength",
+] as const;
+
 // Shared between the single-game Reviews page and the project-wide mixed
 // view — identical filter fields in both places, applied per-game before
 // interleaving in the mixed view. A plain GET form submits back to whatever
 // page renders it, so this needs no action/href beyond `clearHref`.
+//
+// Collapsed behind <details> by default — 9 fields were rendering fully
+// expanded above the review list on every visit, pushing actual content
+// below the fold even when nothing was filtered. Opens automatically when a
+// filter from a previous visit is already active, so it's never hiding
+// state the researcher needs to see.
 export function ReviewFilterForm({
   sp,
   languages,
@@ -14,10 +32,16 @@ export function ReviewFilterForm({
   languages: { language: string; count: number }[];
   clearHref: string;
 }) {
+  const activeCount = FILTER_KEYS.filter((k) => sp[k]).length;
+
   return (
+    <details open={activeCount > 0} className="mt-6 rounded-xl border border-gray-200 bg-white shadow-sm text-sm">
+      <summary className="cursor-pointer select-none p-4 font-medium">
+        Filters{activeCount > 0 ? ` (${activeCount} active)` : ""}
+      </summary>
     <form
       method="get"
-      className="mt-6 grid grid-cols-2 gap-4 rounded-xl border border-gray-200 bg-white shadow-sm p-4 text-sm sm:grid-cols-4"
+      className="grid grid-cols-2 gap-4 border-t border-gray-100 p-4 sm:grid-cols-4"
     >
       <label className="flex flex-col gap-1">
         <span className="font-medium">Recommended</span>
@@ -133,5 +157,6 @@ export function ReviewFilterForm({
         </a>
       </div>
     </form>
+    </details>
   );
 }
