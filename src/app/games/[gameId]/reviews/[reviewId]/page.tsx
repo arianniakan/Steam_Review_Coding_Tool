@@ -231,6 +231,7 @@ export default function ReviewDetailPage() {
             code: { id: t.codeId, label: t.codeLabel, color: t.codeColor },
             coder: { name: t.coderName, kind: t.coderKind },
           }))}
+          promptOverride={codebooks.find((cb) => cb.id === activeCodebookId)?.promptOverride}
         />
       )}
 

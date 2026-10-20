@@ -23,11 +23,13 @@ export function AutoCodeRestPanel({
   gameIds,
   codebookId,
   codes,
+  promptOverride,
 }: {
   training: CodebookTraining;
   gameIds: string[];
   codebookId: string;
   codes: Code[];
+  promptOverride?: string | null;
 }) {
   const [loading, setLoading] = useState(true);
   const [remaining, setRemaining] = useState<UntrainedReview[]>([]);
@@ -60,7 +62,7 @@ export function AutoCodeRestPanel({
     let failed = 0;
     for (let i = 0; i < batch.length; i++) {
       const r = batch[i]!;
-      const result = await runIndependentAiPass(r.reviewId, r.reviewText, codeInputs);
+      const result = await runIndependentAiPass(r.reviewId, r.reviewText, codeInputs, promptOverride);
       if (result.error) {
         failed++;
       } else {

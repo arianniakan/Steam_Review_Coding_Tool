@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { CodeManager } from "@/app/games/[gameId]/codebooks/[codebookId]/CodeManager";
+import { CodebookPromptEditor } from "@/app/games/[gameId]/codebooks/[codebookId]/CodebookPromptEditor";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
 import { getProjectById, type Project } from "@/lib/localDb/queries/projects";
@@ -157,6 +158,13 @@ export default function ProjectCodebookDetailPage() {
           locked={trainingPhase === "locked" || trainingPhase === "verified"}
         />
       </div>
+
+      <CodebookPromptEditor
+        codebookId={codebookId}
+        promptOverride={codebook.promptOverride}
+        locked={trainingPhase === "locked" || trainingPhase === "verified"}
+        onSaved={(promptOverride) => setCodebook({ ...codebook, promptOverride })}
+      />
     </main>
   );
 }

@@ -73,6 +73,7 @@ export function TrainingBucketPanel({
   gameNames,
   nudge,
   onChanged,
+  promptOverride,
 }: {
   trainingId: string;
   stepStart: number;
@@ -84,6 +85,7 @@ export function TrainingBucketPanel({
   gameNames?: Record<string, string>;
   nudge?: string;
   onChanged: () => void | Promise<void>;
+  promptOverride?: string | null;
 }) {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
@@ -98,7 +100,7 @@ export function TrainingBucketPanel({
     let failed = 0;
     for (let i = 0; i < readyForAiPass.length; i++) {
       const r = readyForAiPass[i]!;
-      const result = await runIndependentAiPass(r.reviewId, r.reviewText, codeInputs);
+      const result = await runIndependentAiPass(r.reviewId, r.reviewText, codeInputs, promptOverride);
       if (result.error) {
         failed++;
       } else {

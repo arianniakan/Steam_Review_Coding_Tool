@@ -157,6 +157,11 @@ model Codebook {
   trainingId String?
   training   CodebookTraining? @relation(fields: [trainingId], references: [id])
 
+  // Per-codebook override of the suggest-codes system prompt — null means
+  // use the shared default. Editable/locked exactly like codes, carried
+  // forward by reviseCodebook.
+  promptOverride String?
+
   codes               Code[]
   rejectedSuggestions RejectedSuggestion[]
   relevanceMarks      ReviewRelevance[]
