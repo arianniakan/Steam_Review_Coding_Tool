@@ -10,6 +10,8 @@ export interface Game {
   genres: string[];
   releaseDate: string | null;
   developers: string[];
+  lastIngestedAt: string | null;
+  lastSyncReviewCount: number | null;
 }
 
 export interface GameWithCounts extends Game {
@@ -85,4 +87,23 @@ export async function upsertGameFromSteam(
     ],
   );
   return created.rows[0]!;
+}
+
+// Called after a "Sync more reviews" run completes — lets the game detail
+// page show "Last synced: ..." honestly instead of only ever showing the
+// initial ingest time.
+export async function markGameSynced(gameId: string, reviewCount: number): Promise<void> {
+  const db = await getDb();
+  await db.query(
+    `UPDATE "Game" SET "lastIngestedAt" = now(), "lastSyncReviewCount" = $2 WHERE "id" = $1`,
+    [gameId, reviewCount],
+  );
+}
+
+// Schema cascades (Review/Codebook/ProjectGame/SavedSample/Event -> Game,
+// and everything keyed off Review/Codebook beyond that) handle the rest of
+// the teardown — this one statement is the whole operation.
+export async function deleteGame(id: string): Promise<void> {
+  const db = await getDb();
+  await db.query(`DELETE FROM "Game" WHERE "id" = $1`, [id]);
 }

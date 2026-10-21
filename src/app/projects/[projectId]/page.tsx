@@ -132,11 +132,19 @@ export default function ProjectPage() {
               <Link href={`/games/${g.id}/reviews`} className="flex-1 underline">
                 {g.name}
               </Link>
+              <Link
+                href={`/games/${g.id}`}
+                title="Manage this game — sync, edit reviews, or delete it entirely"
+                className="shrink-0 text-xs text-gray-500 underline hover:text-gray-900"
+              >
+                Manage →
+              </Link>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => handleRemoveGame(g.id)}
-                className="text-xs text-red-600 underline disabled:opacity-50"
+                title="Remove this game from this project only — it isn't deleted"
+                className="shrink-0 text-xs text-red-600 underline disabled:opacity-50"
               >
                 Remove
               </button>

@@ -16,7 +16,9 @@ CREATE TABLE IF NOT EXISTS "Game" (
   "shortDescription" TEXT,
   "genres" TEXT[] NOT NULL DEFAULT '{}',
   "releaseDate" TEXT,
-  "developers" TEXT[] NOT NULL DEFAULT '{}'
+  "developers" TEXT[] NOT NULL DEFAULT '{}',
+  "lastIngestedAt" TIMESTAMPTZ,
+  "lastSyncReviewCount" INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS "SavedSample" (
@@ -51,7 +53,8 @@ CREATE TABLE IF NOT EXISTS "Review" (
   "authorNumGamesOwned" INTEGER,
   "authorNumReviews" INTEGER,
   "authorLastPlayed" TIMESTAMPTZ,
-  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+  "originalText" TEXT
 );
 CREATE INDEX IF NOT EXISTS "Review_gameId_idx" ON "Review"("gameId");
 CREATE INDEX IF NOT EXISTS "Review_gameId_votedUp_idx" ON "Review"("gameId", "votedUp");

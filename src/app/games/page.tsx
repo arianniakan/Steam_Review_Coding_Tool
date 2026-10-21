@@ -27,11 +27,11 @@ export default function GamesPage() {
       ) : (
         <ul className="mt-6 flex flex-col gap-2">
           {games.map((g) => (
-            <li key={g.id}>
-              <Link
-                href={`/games/${g.id}/reviews`}
-                className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-3 text-sm hover:border-gray-400"
-              >
+            <li
+              key={g.id}
+              className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white shadow-sm px-4 py-3 text-sm hover:border-gray-400"
+            >
+              <Link href={`/games/${g.id}/reviews`} className="flex flex-1 items-center gap-3 min-w-0">
                 {g.headerImage && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -45,6 +45,9 @@ export default function GamesPage() {
                   {g.reviewCount} review{g.reviewCount === 1 ? "" : "s"} · {g.codebookCount}{" "}
                   codebook{g.codebookCount === 1 ? "" : "s"}
                 </span>
+              </Link>
+              <Link href={`/games/${g.id}`} className="shrink-0 text-xs text-gray-500 underline hover:text-gray-900">
+                Manage →
               </Link>
             </li>
           ))}

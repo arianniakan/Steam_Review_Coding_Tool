@@ -2,27 +2,12 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { parseSteamAppId, type SteamReview, type SteamAppDetails } from "@/lib/steam";
+import { parseSteamAppId } from "@/lib/steam";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
 import { upsertGameFromSteam } from "@/lib/localDb/queries/games";
-import { upsertReviewsBatch, type IngestReviewRow } from "@/lib/localDb/queries/reviews";
-
-interface SteamIngestResponse {
-  steamAppId: number;
-  gameDetails: SteamAppDetails;
-  reviews: SteamReview[];
-  pagesFetched: number;
-  hasMore: boolean;
-  totalReviewsOnSteam: number;
-}
-
-interface IngestProgress {
-  page: number;
-  maxPages: number;
-  reviewsSoFar: number;
-  totalReviewsOnSteam: number;
-}
+import { upsertReviewsBatch } from "@/lib/localDb/queries/reviews";
+import { runIngestFetch, toIngestRows, type IngestProgress } from "@/lib/ingestClient";
 
 interface IngestResult {
   gameId: string;
@@ -57,78 +42,10 @@ export default function IngestPage() {
     setError(null);
     setResult(null);
     try {
-      const res = await fetch(`/api/games/${parsedId}/ingest`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maxPages }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}) as { error?: string });
-        throw new Error(data.error ?? "Ingestion failed");
-      }
-      if (!res.body) throw new Error("Ingestion failed — empty response");
-
-      // Streamed as newline-delimited JSON so the UI can show live
-      // page-by-page progress instead of a static "Ingesting…" label for
-      // what can be a multi-second, multi-page fetch.
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let data: (SteamIngestResponse & { error?: string }) | null = null;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let newlineIndex: number;
-        while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, newlineIndex);
-          buffer = buffer.slice(newlineIndex + 1);
-          if (!line.trim()) continue;
-          const msg = JSON.parse(line);
-          if (msg.type === "progress") {
-            setProgress({
-              page: msg.page,
-              maxPages: msg.maxPages,
-              reviewsSoFar: msg.reviewsSoFar,
-              totalReviewsOnSteam: msg.totalReviewsOnSteam,
-            });
-          } else if (msg.type === "done") {
-            data = msg;
-          } else if (msg.type === "error") {
-            throw new Error(msg.error ?? "Ingestion failed");
-          }
-        }
-      }
-      if (!data) throw new Error("Ingestion ended unexpectedly");
+      const data = await runIngestFetch(parsedId, maxPages, setProgress);
 
       const game = await upsertGameFromSteam(data.steamAppId, data.gameDetails);
-
-      const rows: IngestReviewRow[] = data.reviews.map((r) => ({
-        steamReviewId: r.recommendationid,
-        text: r.review,
-        votedUp: r.voted_up,
-        playtimeForever: r.author.playtime_forever,
-        votesUp: r.votes_up,
-        votesFunny: r.votes_funny,
-        weightedVoteScore: Number.parseFloat(r.weighted_vote_score) || 0,
-        timestampCreated: new Date(r.timestamp_created * 1000).toISOString(),
-        timestampUpdated: new Date(r.timestamp_updated * 1000).toISOString(),
-        writtenDuringEarlyAccess: r.written_during_early_access,
-        steamPurchase: r.steam_purchase,
-        receivedForFree: r.received_for_free,
-        commentCount: r.comment_count,
-        language: r.language,
-        textLength: r.review.length,
-        playtimeAtReview: r.author.playtime_at_review ?? null,
-        playtimeLastTwoWeeks: r.author.playtime_last_two_weeks ?? null,
-        authorNumGamesOwned: r.author.num_games_owned ?? null,
-        authorNumReviews: r.author.num_reviews ?? null,
-        authorLastPlayed: r.author.last_played
-          ? new Date(r.author.last_played * 1000).toISOString()
-          : null,
-      }));
-
+      const rows = toIngestRows(data.reviews);
       const { insertedCount, updatedCount } = await upsertReviewsBatch(game.id, rows);
 
       setResult({
