@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ReviewFilterForm } from "@/components/ReviewFilterForm";
+import { ActiveFilterChips } from "@/components/ActiveFilterChips";
 import { CodebookToolbar } from "@/components/CodebookToolbar";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
@@ -14,6 +15,7 @@ import {
   listReviews,
   listReviewIdsOrdered,
   groupReviewsByLanguage,
+  deleteReview,
   type ReviewWithTaggingCount,
 } from "@/lib/localDb/queries/reviews";
 import { getProjectById, listGamesForProject, type Project } from "@/lib/localDb/queries/projects";
@@ -53,6 +55,10 @@ export default function ProjectMixedReviewsPage() {
   const [excludedIds, setExcludedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [bulkMarking, setBulkMarking] = useState(false);
+  const [confirmingBulkIrrelevant, setConfirmingBulkIrrelevant] = useState(false);
+  const [confirmingIrrelevantId, setConfirmingIrrelevantId] = useState<string | null>(null);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   async function load() {
     const p = await getProjectById(projectId);
@@ -111,12 +117,21 @@ export default function ProjectMixedReviewsPage() {
 
   async function handleMarkIrrelevant(reviewId: string) {
     if (!activeCodebookId) return;
+    if (confirmingIrrelevantId !== reviewId) {
+      setConfirmingIrrelevantId(reviewId);
+      return;
+    }
+    setConfirmingIrrelevantId(null);
     await markReviewIrrelevant(reviewId, activeCodebookId);
     setRows((prev) => prev.filter((r) => r.id !== reviewId));
   }
 
   async function handleMarkAllIrrelevant() {
     if (!activeCodebookId || games.length === 0) return;
+    if (!confirmingBulkIrrelevant) {
+      setConfirmingBulkIrrelevant(true);
+      return;
+    }
     setBulkMarking(true);
     try {
       const gameIds = games.map((g) => g.id);
@@ -125,6 +140,22 @@ export default function ProjectMixedReviewsPage() {
       await load();
     } finally {
       setBulkMarking(false);
+      setConfirmingBulkIrrelevant(false);
+    }
+  }
+
+  async function handleDeleteReview(reviewId: string) {
+    if (confirmingDeleteId !== reviewId) {
+      setConfirmingDeleteId(reviewId);
+      return;
+    }
+    setDeletingId(reviewId);
+    try {
+      await deleteReview(reviewId);
+      setRows((prev) => prev.filter((r) => r.id !== reviewId));
+    } finally {
+      setDeletingId(null);
+      setConfirmingDeleteId(null);
     }
   }
 
@@ -238,18 +269,43 @@ export default function ProjectMixedReviewsPage() {
         </label>
       </div>
 
-      {activeCodebookId && total > 0 && (
-        <button
-          type="button"
-          onClick={handleMarkAllIrrelevant}
-          disabled={bulkMarking}
-          className="mt-2 text-xs text-gray-500 underline disabled:opacity-50"
-        >
-          {bulkMarking ? "Marking…" : `Mark all ${total} matching as not relevant →`}
-        </button>
-      )}
-
       <ReviewFilterForm sp={sp} languages={languages} clearHref={`/projects/${projectId}/reviews?perGame=${perGame}`} />
+      <ActiveFilterChips sp={sp} />
+
+      {activeCodebookId && total > 0 && (
+        <div className="mt-4 rounded-xl border border-dashed border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
+          <p>
+            Hides reviews from <span className="font-medium">this codebook only</span> — other
+            codebooks on this game still see them. For permanent removal, delete the review
+            instead (below each one).
+          </p>
+          {confirmingBulkIrrelevant ? (
+            <div className="mt-2 flex items-center gap-3">
+              <span>Mark all {total} matching reviews not relevant to this codebook?</span>
+              <button
+                type="button"
+                onClick={handleMarkAllIrrelevant}
+                disabled={bulkMarking}
+                className="font-medium underline disabled:opacity-50"
+              >
+                {bulkMarking ? "Marking…" : "Yes, mark all"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingBulkIrrelevant(false)}
+                disabled={bulkMarking}
+                className="underline disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button type="button" onClick={handleMarkAllIrrelevant} className="mt-2 underline">
+              Mark all {total} matching as not relevant →
+            </button>
+          )}
+        </div>
+      )}
 
       <ul className="mt-6 flex flex-col gap-4">
         {rows.map((r) => (
@@ -278,20 +334,55 @@ export default function ProjectMixedReviewsPage() {
               )}
             </div>
             <p className="mt-2 whitespace-pre-wrap">{r.text}</p>
-            <div className="mt-2 flex items-center gap-3">
+            <div className="mt-2 flex flex-wrap items-center gap-3">
               <Link
                 href={`/projects/${projectId}/reviews/${r.id}?${tagQuery.toString()}`}
                 className="inline-block text-xs underline"
               >
                 Tag this review →
               </Link>
-              {activeCodebookId && (
+              {activeCodebookId &&
+                (confirmingIrrelevantId === r.id ? (
+                  <span className="flex items-center gap-2 text-xs">
+                    <span className="text-amber-700">Not relevant to this codebook?</span>
+                    <button type="button" onClick={() => handleMarkIrrelevant(r.id)} className="font-medium text-amber-700 underline">
+                      Yes
+                    </button>
+                    <button type="button" onClick={() => setConfirmingIrrelevantId(null)} className="text-gray-500 underline">
+                      Cancel
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleMarkIrrelevant(r.id)}
+                    className="text-xs text-amber-700 underline"
+                  >
+                    Not relevant →
+                  </button>
+                ))}
+              {confirmingDeleteId === r.id ? (
+                <span className="flex items-center gap-2 text-xs">
+                  <span className="text-red-700">Permanently delete this review?</span>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteReview(r.id)}
+                    disabled={deletingId === r.id}
+                    className="font-medium text-red-700 underline disabled:opacity-50"
+                  >
+                    {deletingId === r.id ? "Deleting…" : "Yes, delete"}
+                  </button>
+                  <button type="button" onClick={() => setConfirmingDeleteId(null)} className="text-gray-500 underline">
+                    Cancel
+                  </button>
+                </span>
+              ) : (
                 <button
                   type="button"
-                  onClick={() => handleMarkIrrelevant(r.id)}
-                  className="text-xs text-gray-500 underline"
+                  onClick={() => handleDeleteReview(r.id)}
+                  className="text-xs text-red-600 underline"
                 >
-                  Not relevant →
+                  Delete review →
                 </button>
               )}
             </div>

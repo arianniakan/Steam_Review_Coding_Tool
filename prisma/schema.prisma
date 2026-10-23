@@ -25,6 +25,11 @@ model Game {
   releaseDate      String? // free text — Steam's own format varies ("Coming soon", "Q4 2025", a real date, ...)
   developers       String[]
 
+  // Null means never re-synced since the initial ingest — shown honestly on
+  // the game detail page rather than fabricating a date.
+  lastIngestedAt      DateTime?
+  lastSyncReviewCount Int?
+
   reviews      Review[]
   codebooks    Codebook[]
   events       Event[]
@@ -76,6 +81,11 @@ model Review {
   authorLastPlayed     DateTime?
 
   createdAt DateTime @default(now())
+
+  // Null unless this review's text has been manually edited, in which case
+  // it holds the as-ingested text — its presence (not a separate boolean)
+  // is the "edited" flag, same convention as the side tables below.
+  originalText String?
 
   taggings            Tagging[]
   rejectedSuggestions RejectedSuggestion[]

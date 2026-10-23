@@ -25,6 +25,7 @@ export interface Review {
   authorNumReviews: number | null;
   authorLastPlayed: string | null;
   createdAt: string;
+  originalText: string | null;
 }
 
 export interface ReviewWithTaggingCount extends Review {
@@ -108,6 +109,64 @@ export async function getReviewById(id: string): Promise<Review | null> {
   return result.rows[0] ?? null;
 }
 
+// Cascades to Tagging/ReviewSplitAssignment/AutoCodeAttempt/
+// RejectedSuggestion/ReviewRelevance automatically (see schema.sql).
+export async function deleteReview(id: string): Promise<void> {
+  const db = await getDb();
+  await db.query(`DELETE FROM "Review" WHERE "id" = $1`, [id]);
+}
+
+// Only `text` is editable — votedUp/playtime/purchase flags/dates feed
+// filtering, codebook-generation sampling ratios, and training-split
+// stratification, so letting those drift from what Steam actually recorded
+// would retroactively invalidate already-drawn splits in ways much harder to
+// reason about than a text correction.
+//
+// The COALESCE means a *second* edit (without reverting first) still
+// preserves the *original* pre-edit text, not the intermediate one —
+// originalText is set once and never overwritten while it's non-null.
+export async function updateReviewText(id: string, newText: string): Promise<Review> {
+  const db = await getDb();
+  const result = await db.query<Review>(
+    `UPDATE "Review" SET
+       "originalText" = COALESCE("originalText", "text"),
+       "text" = $2,
+       "textLength" = $3
+     WHERE "id" = $1 RETURNING *`,
+    [id, newText, newText.length],
+  );
+  return result.rows[0]!;
+}
+
+// Reverts a manual edit back to the as-ingested text and clears the edit
+// flag entirely (originalText -> NULL) rather than leaving it pointing at
+// text that's now live again — its presence is what means "edited".
+export async function revertReviewToOriginal(id: string): Promise<Review> {
+  const db = await getDb();
+  const result = await db.query<Review>(
+    `UPDATE "Review" SET
+       "text" = "originalText",
+       "textLength" = LENGTH("originalText"),
+       "originalText" = NULL
+     WHERE "id" = $1 AND "originalText" IS NOT NULL RETURNING *`,
+    [id],
+  );
+  return result.rows[0]!;
+}
+
+// Used by the review-edit UI to warn before saving over a review that
+// already has taggings — Tagging.spanStart/spanEnd are character offsets
+// into this review's text at the time they were created, so editing the
+// text can silently misalign existing highlights.
+export async function countTaggingsForReview(reviewId: string): Promise<number> {
+  const db = await getDb();
+  const result = await db.query<{ count: number }>(
+    `SELECT COUNT(*)::int AS count FROM "Tagging" WHERE "reviewId" = $1`,
+    [reviewId],
+  );
+  return result.rows[0]?.count ?? 0;
+}
+
 export async function listReviewIdsOrdered(
   gameId: string | string[],
   sp: ReviewSearchParams,
@@ -186,7 +245,12 @@ export async function upsertReviewsBatch(
         "authorNumGamesOwned", "authorNumReviews", "authorLastPlayed"
       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
       ON CONFLICT ("steamReviewId") DO UPDATE SET
-        "text" = EXCLUDED."text",
+        -- A manually-edited review (originalText IS NOT NULL) keeps its
+        -- edited text/textLength across re-syncs instead of Steam's refresh
+        -- silently clobbering both the edit and the preserved original in
+        -- one step. Every other column still always refreshes from Steam.
+        "text" = CASE WHEN "Review"."originalText" IS NULL THEN EXCLUDED."text" ELSE "Review"."text" END,
+        "textLength" = CASE WHEN "Review"."originalText" IS NULL THEN EXCLUDED."textLength" ELSE "Review"."textLength" END,
         "votedUp" = EXCLUDED."votedUp",
         "playtimeForever" = EXCLUDED."playtimeForever",
         "votesUp" = EXCLUDED."votesUp",
@@ -199,7 +263,6 @@ export async function upsertReviewsBatch(
         "receivedForFree" = EXCLUDED."receivedForFree",
         "commentCount" = EXCLUDED."commentCount",
         "language" = EXCLUDED."language",
-        "textLength" = EXCLUDED."textLength",
         "playtimeAtReview" = EXCLUDED."playtimeAtReview",
         "playtimeLastTwoWeeks" = EXCLUDED."playtimeLastTwoWeeks",
         "authorNumGamesOwned" = EXCLUDED."authorNumGamesOwned",

@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import { TagEditor } from "./TagEditor";
 import { ReviewNav } from "./ReviewNav";
+import { EditReviewText } from "./EditReviewText";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
 import { CodebookToolbar } from "@/components/CodebookToolbar";
 import type { ReviewSearchParams } from "@/lib/localDb/queries/reviewFilters";
 import { getGameById, type Game } from "@/lib/localDb/queries/games";
-import { getReviewById, listReviewIdsOrdered, type Review } from "@/lib/localDb/queries/reviews";
+import { getReviewById, listReviewIdsOrdered, deleteReview, type Review } from "@/lib/localDb/queries/reviews";
 import { listCodebooksForGame, type Codebook } from "@/lib/localDb/queries/codebooks";
 import { listCodesForCodebook, type Code } from "@/lib/localDb/queries/codes";
 import { listTaggingsForReview, type TaggingWithCode } from "@/lib/localDb/queries/taggings";
@@ -27,6 +29,7 @@ type SearchParams = ReviewSearchParams & { codebookId?: string };
 export default function ReviewDetailPage() {
   const { gameId, reviewId } = useParams<{ gameId: string; reviewId: string }>();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const sp: SearchParams = Object.fromEntries(searchParams.entries());
 
   const [loading, setLoading] = useState(true);
@@ -40,6 +43,8 @@ export default function ReviewDetailPage() {
   const [gated, setGated] = useState(false);
   const [irrelevant, setIrrelevant] = useState(false);
   const [unmarking, setUnmarking] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     const [g, r, cbs] = await Promise.all([
@@ -87,6 +92,22 @@ export default function ReviewDetailPage() {
       await load();
     } finally {
       setUnmarking(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    setDeleting(true);
+    try {
+      await deleteReview(reviewId);
+      toast.success("Review deleted");
+      router.push(`/games/${gameId}/reviews`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete review");
+      setDeleting(false);
     }
   }
 
@@ -173,15 +194,34 @@ export default function ReviewDetailPage() {
         />
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-        <span className={review.votedUp ? "text-green-700" : "text-red-700"}>
-          {review.votedUp ? "Recommended" : "Not recommended"}
-        </span>
-        <span>·</span>
-        <span>{(review.playtimeForever / 60).toFixed(1)}h playtime</span>
-        <span>·</span>
-        <span>{new Date(review.timestampCreated).toISOString().slice(0, 10)}</span>
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+          <span className={review.votedUp ? "text-green-700" : "text-red-700"}>
+            {review.votedUp ? "Recommended" : "Not recommended"}
+          </span>
+          <span>·</span>
+          <span>{(review.playtimeForever / 60).toFixed(1)}h playtime</span>
+          <span>·</span>
+          <span>{new Date(review.timestampCreated).toISOString().slice(0, 10)}</span>
+        </div>
+        {confirmingDelete ? (
+          <span className="flex items-center gap-2 text-xs">
+            <span className="text-red-700">Permanently delete this review?</span>
+            <button type="button" onClick={handleDelete} disabled={deleting} className="font-medium text-red-700 underline disabled:opacity-50">
+              {deleting ? "Deleting…" : "Yes, delete"}
+            </button>
+            <button type="button" onClick={() => setConfirmingDelete(false)} disabled={deleting} className="text-gray-500 underline disabled:opacity-50">
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button type="button" onClick={handleDelete} className="text-xs text-red-600 underline">
+            Delete review →
+          </button>
+        )}
       </div>
+
+      <EditReviewText review={review} onUpdated={setReview} />
 
       {gated ? (
         <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500">

@@ -185,6 +185,23 @@ async function runMigrations(db: PGlite): Promise<void> {
       ALTER TABLE "Codebook" ADD COLUMN IF NOT EXISTS "promptOverride" TEXT;
     `);
   }
+
+  // lastIngestedAt/lastSyncReviewCount: null means "never re-synced since
+  // initial ingest" — shown honestly on the new game detail page rather than
+  // fabricating a date. originalText's presence (not a separate boolean) is
+  // the "this review was manually edited" flag, same convention as
+  // ReviewRelevance/RejectedSuggestion above.
+  if (!(await columnExists(db, "Game", "lastIngestedAt"))) {
+    await db.exec(`
+      ALTER TABLE "Game" ADD COLUMN IF NOT EXISTS "lastIngestedAt" TIMESTAMPTZ;
+      ALTER TABLE "Game" ADD COLUMN IF NOT EXISTS "lastSyncReviewCount" INTEGER;
+    `);
+  }
+  if (!(await columnExists(db, "Review", "originalText"))) {
+    await db.exec(`
+      ALTER TABLE "Review" ADD COLUMN IF NOT EXISTS "originalText" TEXT;
+    `);
+  }
 }
 
 async function createClient(loadDataDir?: Blob | File): Promise<PGlite> {
