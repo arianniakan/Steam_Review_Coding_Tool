@@ -55,6 +55,18 @@ export async function fetchReviewPage(
   if (!res.ok) {
     throw new Error(`Steam appreviews request failed: ${res.status}`);
   }
+  // Steam's anti-bot protection sometimes redirects this endpoint to the
+  // store homepage instead of returning a non-2xx status — `fetch` follows
+  // that redirect transparently, so the response still reads as 200 OK but
+  // its body is the homepage's HTML, not review JSON. Left unchecked, the
+  // JSON.parse below throws a cryptic "Unexpected token '<'" that leaks
+  // straight to the ingest UI with no indication of the real cause.
+  const contentType = res.headers.get("content-type") ?? "";
+  if (res.redirected || !contentType.includes("application/json")) {
+    throw new Error(
+      "Steam blocked this request (likely anti-bot protection on their end) instead of returning review data — try again in a bit",
+    );
+  }
   return res.json();
 }
 
