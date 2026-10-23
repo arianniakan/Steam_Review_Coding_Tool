@@ -109,7 +109,7 @@ export default function ProjectExcludedReviewsPage() {
                 <button
                   type="button"
                   onClick={() => handleUnmark(r.reviewId)}
-                  className="text-xs underline"
+                  className="rounded-lg border border-green-300 bg-white px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50"
                 >
                   Re-include
                 </button>

@@ -265,14 +265,15 @@ export default function ReviewsPage() {
             <span className="font-medium">Excluded</span> page above. For permanent removal,
             delete the review instead (below each one).
           </p>
+
           {confirmingBulkIrrelevant ? (
-            <div className="mt-2 flex items-center gap-3">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <span>Exclude all {total} shown reviews from this codebook?</span>
               <button
                 type="button"
                 onClick={handleMarkAllIrrelevant}
                 disabled={bulkMarking}
-                className="font-medium underline disabled:opacity-50"
+                className="rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
               >
                 {bulkMarking ? "Excluding…" : "Yes, exclude all shown"}
               </button>
@@ -280,21 +281,25 @@ export default function ReviewsPage() {
                 type="button"
                 onClick={() => setConfirmingBulkIrrelevant(false)}
                 disabled={bulkMarking}
-                className="underline disabled:opacity-50"
+                className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
               >
                 Cancel
               </button>
             </div>
           ) : (
-            <button type="button" onClick={handleMarkAllIrrelevant} className="mt-2 underline">
-              Exclude all {total} shown →
+            <button
+              type="button"
+              onClick={handleMarkAllIrrelevant}
+              className="mt-2 rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+            >
+              Exclude all {total} shown
             </button>
           )}
 
           {hasActiveFilter && (
             <div className="mt-3 border-t border-amber-200 pt-2">
               {confirmingKeepOnly ? (
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2">
                   <span>
                     Exclude the other {keepOnlyCount ?? "…"} review(s) not shown by this filter —
                     keeping only these {total}?
@@ -303,7 +308,7 @@ export default function ReviewsPage() {
                     type="button"
                     onClick={handleKeepOnlyFiltered}
                     disabled={keepOnlyMarking}
-                    className="font-medium underline disabled:opacity-50"
+                    className="rounded-lg bg-amber-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50"
                   >
                     {keepOnlyMarking ? "Excluding…" : "Yes, exclude the rest"}
                   </button>
@@ -314,14 +319,18 @@ export default function ReviewsPage() {
                       setKeepOnlyCount(null);
                     }}
                     disabled={keepOnlyMarking}
-                    className="underline disabled:opacity-50"
+                    className="rounded-lg border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50"
                   >
                     Cancel
                   </button>
                 </div>
               ) : (
-                <button type="button" onClick={handleKeepOnlyFiltered} className="underline">
-                  Exclude everything NOT shown (keep these {total}) →
+                <button
+                  type="button"
+                  onClick={handleKeepOnlyFiltered}
+                  className="rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                >
+                  Exclude everything NOT shown (keep these {total})
                 </button>
               )}
             </div>
@@ -370,21 +379,30 @@ export default function ReviewsPage() {
               )}
             </div>
             <p className="mt-2 whitespace-pre-wrap">{r.text}</p>
-            <div className="mt-2 flex flex-wrap items-center gap-3">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <Link
                 href={`/games/${gameId}/reviews/${r.id}?${tagQuery.toString()}`}
-                className="inline-block text-xs underline"
+                className="text-xs underline"
               >
                 Tag this review →
               </Link>
+
               {activeCodebookId &&
                 (confirmingIrrelevantId === r.id ? (
                   <span className="flex items-center gap-2 text-xs">
-                    <span className="text-amber-700">Exclude this review from the codebook?</span>
-                    <button type="button" onClick={() => handleMarkIrrelevant(r.id)} className="font-medium text-amber-700 underline">
+                    <span className="text-amber-700">Exclude from this codebook?</span>
+                    <button
+                      type="button"
+                      onClick={() => handleMarkIrrelevant(r.id)}
+                      className="rounded-lg bg-amber-600 px-2 py-0.5 font-medium text-white hover:bg-amber-700"
+                    >
                       Yes, exclude
                     </button>
-                    <button type="button" onClick={() => setConfirmingIrrelevantId(null)} className="text-gray-500 underline">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingIrrelevantId(null)}
+                      className="rounded-lg border border-gray-300 bg-white px-2 py-0.5 text-gray-600 hover:bg-gray-50"
+                    >
                       Cancel
                     </button>
                   </span>
@@ -392,23 +410,28 @@ export default function ReviewsPage() {
                   <button
                     type="button"
                     onClick={() => handleMarkIrrelevant(r.id)}
-                    className="text-xs text-amber-700 underline"
+                    className="rounded-lg border border-amber-300 bg-white px-2 py-0.5 text-xs font-medium text-amber-700 hover:bg-amber-50"
                   >
-                    Exclude from codebook →
+                    Exclude
                   </button>
                 ))}
+
               {confirmingDeleteId === r.id ? (
                 <span className="flex items-center gap-2 text-xs">
-                  <span className="text-red-700">Permanently delete this review?</span>
+                  <span className="text-red-700">Permanently delete?</span>
                   <button
                     type="button"
                     onClick={() => handleDeleteReview(r.id)}
                     disabled={deletingId === r.id}
-                    className="font-medium text-red-700 underline disabled:opacity-50"
+                    className="rounded-lg bg-red-600 px-2 py-0.5 font-medium text-white hover:bg-red-700 disabled:opacity-50"
                   >
                     {deletingId === r.id ? "Deleting…" : "Yes, delete"}
                   </button>
-                  <button type="button" onClick={() => setConfirmingDeleteId(null)} className="text-gray-500 underline">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDeleteId(null)}
+                    className="rounded-lg border border-gray-300 bg-white px-2 py-0.5 text-gray-600 hover:bg-gray-50"
+                  >
                     Cancel
                   </button>
                 </span>
@@ -416,9 +439,9 @@ export default function ReviewsPage() {
                 <button
                   type="button"
                   onClick={() => handleDeleteReview(r.id)}
-                  className="text-xs text-red-600 underline"
+                  className="rounded-lg border border-red-300 bg-white px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50"
                 >
-                  Delete review →
+                  Delete
                 </button>
               )}
             </div>

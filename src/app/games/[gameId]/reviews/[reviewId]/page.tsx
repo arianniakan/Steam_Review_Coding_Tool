@@ -206,17 +206,31 @@ export default function ReviewDetailPage() {
         </div>
         {confirmingDelete ? (
           <span className="flex items-center gap-2 text-xs">
-            <span className="text-red-700">Permanently delete this review?</span>
-            <button type="button" onClick={handleDelete} disabled={deleting} className="font-medium text-red-700 underline disabled:opacity-50">
+            <span className="text-red-700">Permanently delete?</span>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="rounded-lg bg-red-600 px-2 py-0.5 font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            >
               {deleting ? "Deleting…" : "Yes, delete"}
             </button>
-            <button type="button" onClick={() => setConfirmingDelete(false)} disabled={deleting} className="text-gray-500 underline disabled:opacity-50">
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(false)}
+              disabled={deleting}
+              className="rounded-lg border border-gray-300 bg-white px-2 py-0.5 text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+            >
               Cancel
             </button>
           </span>
         ) : (
-          <button type="button" onClick={handleDelete} className="text-xs text-red-600 underline">
-            Delete review →
+          <button
+            type="button"
+            onClick={handleDelete}
+            className="rounded-lg border border-red-300 bg-white px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-50"
+          >
+            Delete review
           </button>
         )}
       </div>
@@ -241,7 +255,7 @@ export default function ReviewDetailPage() {
             type="button"
             onClick={handleUnmarkIrrelevant}
             disabled={unmarking}
-            className="ml-1 underline disabled:opacity-50"
+            className="ml-2 rounded-lg border border-green-300 bg-white px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-50"
           >
             {unmarking ? "Re-including…" : "Re-include"}
           </button>
