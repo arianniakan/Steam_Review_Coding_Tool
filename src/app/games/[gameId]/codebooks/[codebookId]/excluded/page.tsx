@@ -74,8 +74,8 @@ export default function ExcludedReviewsPage() {
         <p className="text-sm text-gray-500">{game.name}</p>
         <h1 className="text-2xl font-semibold">{codebook.name} — Excluded reviews</h1>
         <p className="mt-1 text-sm text-gray-500">
-          Reviews marked not relevant to this codebook&apos;s research question — hidden from the
-          normal Reviews list and never drawn into a training split for this codebook. Un-mark to
+          Reviews excluded from this codebook&apos;s research question — hidden from the normal
+          Reviews list and never drawn into a training split for this codebook. Re-include to
           bring one back.
         </p>
       </div>
@@ -100,7 +100,7 @@ export default function ExcludedReviewsPage() {
                   onClick={() => handleUnmark(r.reviewId)}
                   className="text-xs underline"
                 >
-                  Un-mark
+                  Re-include
                 </button>
               </div>
             </div>

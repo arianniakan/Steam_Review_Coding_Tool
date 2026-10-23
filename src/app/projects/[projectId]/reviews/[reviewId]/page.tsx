@@ -209,15 +209,15 @@ export default function ProjectReviewDetailPage() {
         </div>
       ) : irrelevant ? (
         <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 text-sm text-gray-500">
-          This review was marked not relevant to this codebook, so it&apos;s hidden from the
-          normal tagging flow.
+          This review is excluded from this codebook, so it&apos;s hidden from the normal tagging
+          flow.
           <button
             type="button"
             onClick={handleUnmarkIrrelevant}
             disabled={unmarking}
             className="ml-1 underline disabled:opacity-50"
           >
-            {unmarking ? "Un-marking…" : "Un-mark"}
+            {unmarking ? "Re-including…" : "Re-include"}
           </button>
         </div>
       ) : (
