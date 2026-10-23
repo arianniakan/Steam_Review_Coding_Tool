@@ -29,17 +29,26 @@ export interface ReviewSearchParams {
 // same filter semantics, but producing a parameterized WHERE fragment
 // instead of a Prisma `where` object, since queries now run directly
 // against PGlite rather than through Prisma Client.
+//
+// `invert` wraps just the filter-derived conditions (voted/purchase/etc,
+// not gameId or excludeReviewIds) in NOT(...) — this is what lets a single
+// query answer both "reviews matching this filter" and "reviews NOT
+// matching this filter" (the complement, scoped to the same game and still
+// excluding already-gated/already-excluded reviews either way), rather than
+// needing a second, hand-duplicated WHERE builder.
 export function buildReviewWhereSql(
   gameId: string | string[],
   sp: ReviewSearchParams,
   excludeReviewIds?: string[],
+  options?: { invert?: boolean },
 ): { sql: string; params: unknown[] } {
-  const conditions: string[] = Array.isArray(gameId) ? [`"gameId" = ANY($1)`] : [`"gameId" = $1`];
+  const scopeConditions: string[] = Array.isArray(gameId) ? [`"gameId" = ANY($1)`] : [`"gameId" = $1`];
+  const filterConditions: string[] = [];
   const params: unknown[] = [gameId];
 
   function push(template: string, value: unknown) {
     params.push(value);
-    conditions.push(template.replace("?", `$${params.length}`));
+    filterConditions.push(template.replace("?", `$${params.length}`));
   }
 
   if (sp.voted === "up") push(`"votedUp" = ?`, true);
@@ -69,9 +78,23 @@ export function buildReviewWhereSql(
 
   // Hides reviews reserved for an active (not-yet-verified) training's
   // test/verification buckets — see getGatedReviewIds in queries/training.ts.
-  if (excludeReviewIds && excludeReviewIds.length > 0) push(`NOT ("id" = ANY(?))`, excludeReviewIds);
+  // Always a strict AND, regardless of `invert` — an inverted query should
+  // still never surface an already-gated/excluded review.
+  if (excludeReviewIds && excludeReviewIds.length > 0) {
+    params.push(excludeReviewIds);
+    scopeConditions.push(`NOT ("id" = ANY($${params.length}))`);
+  }
 
-  return { sql: conditions.join(" AND "), params };
+  if (filterConditions.length > 0) {
+    const combined = filterConditions.join(" AND ");
+    scopeConditions.push(options?.invert ? `NOT (${combined})` : combined);
+  } else if (options?.invert) {
+    // No filters active — "not matching any filter" is an empty set, since
+    // every review trivially matches an absence of filters.
+    scopeConditions.push("false");
+  }
+
+  return { sql: scopeConditions.join(" AND "), params };
 }
 
 export function buildReviewOrderBySql(sp: ReviewSearchParams): string {

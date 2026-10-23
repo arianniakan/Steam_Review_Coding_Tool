@@ -38,9 +38,10 @@ export async function countReviews(
   gameId: string | string[],
   sp: ReviewSearchParams,
   excludeReviewIds?: string[],
+  options?: { invert?: boolean },
 ): Promise<number> {
   const db = await getDb();
-  const { sql, params } = buildReviewWhereSql(gameId, sp, excludeReviewIds);
+  const { sql, params } = buildReviewWhereSql(gameId, sp, excludeReviewIds, options);
   const result = await db.query<{ count: number }>(
     `SELECT COUNT(*)::int AS count FROM "Review" WHERE ${sql}`,
     params,
@@ -171,9 +172,10 @@ export async function listReviewIdsOrdered(
   gameId: string | string[],
   sp: ReviewSearchParams,
   excludeReviewIds?: string[],
+  options?: { invert?: boolean },
 ): Promise<string[]> {
   const db = await getDb();
-  const { sql, params } = buildReviewWhereSql(gameId, sp, excludeReviewIds);
+  const { sql, params } = buildReviewWhereSql(gameId, sp, excludeReviewIds, options);
   const orderBy = buildReviewOrderBySql(sp);
   const result = await db.query<{ id: string }>(
     `SELECT "id" FROM "Review" WHERE ${sql} ORDER BY ${orderBy}`,

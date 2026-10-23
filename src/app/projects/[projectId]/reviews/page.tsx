@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ReviewFilterForm } from "@/components/ReviewFilterForm";
+import { ReviewFilterForm, FILTER_KEYS } from "@/components/ReviewFilterForm";
 import { ActiveFilterChips } from "@/components/ActiveFilterChips";
 import { CodebookToolbar } from "@/components/CodebookToolbar";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
@@ -59,6 +59,9 @@ export default function ProjectMixedReviewsPage() {
   const [confirmingIrrelevantId, setConfirmingIrrelevantId] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [keepOnlyMarking, setKeepOnlyMarking] = useState(false);
+  const [confirmingKeepOnly, setConfirmingKeepOnly] = useState(false);
+  const [keepOnlyCount, setKeepOnlyCount] = useState<number | null>(null);
 
   async function load() {
     const p = await getProjectById(projectId);
@@ -159,9 +162,35 @@ export default function ProjectMixedReviewsPage() {
     }
   }
 
+  // Complement of handleMarkAllIrrelevant: excludes everything that does
+  // NOT match the current filter, so the filtered subset is what's kept.
+  // The inverse count isn't known until queried, so it's fetched when the
+  // confirm step first opens rather than pre-computed on every render.
+  async function handleKeepOnlyFiltered() {
+    if (!activeCodebookId || games.length === 0) return;
+    const gameIds = games.map((g) => g.id);
+    if (!confirmingKeepOnly) {
+      const inverseCount = await countReviews(gameIds, sp, excludedIds, { invert: true });
+      setKeepOnlyCount(inverseCount);
+      setConfirmingKeepOnly(true);
+      return;
+    }
+    setKeepOnlyMarking(true);
+    try {
+      const nonMatchingIds = await listReviewIdsOrdered(gameIds, sp, excludedIds, { invert: true });
+      await markReviewsIrrelevantBulk(nonMatchingIds, activeCodebookId);
+      await load();
+    } finally {
+      setKeepOnlyMarking(false);
+      setConfirmingKeepOnly(false);
+      setKeepOnlyCount(null);
+    }
+  }
+
   const totalPerGame = Object.values(perGameCounts);
   const total = totalPerGame.reduce((a, b) => a + b, 0);
   const longestGamePages = Math.max(1, ...totalPerGame.map((c) => Math.ceil(c / perGame)));
+  const hasActiveFilter = FILTER_KEYS.some((k) => sp[k]);
 
   const filterParams = new URLSearchParams();
   if (sp.voted) filterParams.set("voted", sp.voted);
@@ -303,6 +332,42 @@ export default function ProjectMixedReviewsPage() {
             <button type="button" onClick={handleMarkAllIrrelevant} className="mt-2 underline">
               Mark all {total} matching as not relevant →
             </button>
+          )}
+
+          {hasActiveFilter && (
+            <div className="mt-3 border-t border-amber-200 pt-2">
+              {confirmingKeepOnly ? (
+                <div className="flex items-center gap-3">
+                  <span>
+                    Keep only these {total} and exclude the other {keepOnlyCount ?? "…"} review(s)
+                    that don&apos;t match the current filter?
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleKeepOnlyFiltered}
+                    disabled={keepOnlyMarking}
+                    className="font-medium underline disabled:opacity-50"
+                  >
+                    {keepOnlyMarking ? "Excluding…" : "Yes, keep only these"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmingKeepOnly(false);
+                      setKeepOnlyCount(null);
+                    }}
+                    disabled={keepOnlyMarking}
+                    className="underline disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button type="button" onClick={handleKeepOnlyFiltered} className="underline">
+                  Keep only these {total} — exclude everything else →
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
