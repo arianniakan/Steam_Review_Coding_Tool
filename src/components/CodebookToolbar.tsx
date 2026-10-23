@@ -133,7 +133,7 @@ export function CodebookToolbar({
         </Link>
         <Link
           href={`${basePath}/codebooks/${active.id}/excluded`}
-          title="Reviews marked not relevant to this codebook — hidden from the normal list, reversible"
+          title="Reviews excluded from this codebook — hidden from the normal list, reversible"
           className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium hover:bg-gray-50"
         >
           Excluded{excludedCount > 0 ? ` (${excludedCount})` : ""}

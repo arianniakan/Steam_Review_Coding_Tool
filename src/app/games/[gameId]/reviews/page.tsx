@@ -258,21 +258,23 @@ export default function ReviewsPage() {
 
       {activeCodebookId && total > 0 && (
         <div className="mt-4 rounded-xl border border-dashed border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
-          <p>
-            Hides reviews from <span className="font-medium">this codebook only</span> — other
-            codebooks on this game still see them. For permanent removal, delete the review
-            instead (below each one).
+          <p className="font-medium">Exclude reviews from this codebook</p>
+          <p className="mt-1">
+            Excludes reviews from <span className="font-medium">this codebook only</span> — other
+            codebooks on this game still see them, and it&apos;s reversible from the{" "}
+            <span className="font-medium">Excluded</span> page above. For permanent removal,
+            delete the review instead (below each one).
           </p>
           {confirmingBulkIrrelevant ? (
             <div className="mt-2 flex items-center gap-3">
-              <span>Mark all {total} matching reviews not relevant to this codebook?</span>
+              <span>Exclude all {total} shown reviews from this codebook?</span>
               <button
                 type="button"
                 onClick={handleMarkAllIrrelevant}
                 disabled={bulkMarking}
                 className="font-medium underline disabled:opacity-50"
               >
-                {bulkMarking ? "Marking…" : "Yes, mark all"}
+                {bulkMarking ? "Excluding…" : "Yes, exclude all shown"}
               </button>
               <button
                 type="button"
@@ -285,7 +287,7 @@ export default function ReviewsPage() {
             </div>
           ) : (
             <button type="button" onClick={handleMarkAllIrrelevant} className="mt-2 underline">
-              Mark all {total} matching as not relevant →
+              Exclude all {total} shown →
             </button>
           )}
 
@@ -294,8 +296,8 @@ export default function ReviewsPage() {
               {confirmingKeepOnly ? (
                 <div className="flex items-center gap-3">
                   <span>
-                    Keep only these {total} and exclude the other {keepOnlyCount ?? "…"} review(s)
-                    that don&apos;t match the current filter?
+                    Exclude the other {keepOnlyCount ?? "…"} review(s) not shown by this filter —
+                    keeping only these {total}?
                   </span>
                   <button
                     type="button"
@@ -303,7 +305,7 @@ export default function ReviewsPage() {
                     disabled={keepOnlyMarking}
                     className="font-medium underline disabled:opacity-50"
                   >
-                    {keepOnlyMarking ? "Excluding…" : "Yes, keep only these"}
+                    {keepOnlyMarking ? "Excluding…" : "Yes, exclude the rest"}
                   </button>
                   <button
                     type="button"
@@ -319,7 +321,7 @@ export default function ReviewsPage() {
                 </div>
               ) : (
                 <button type="button" onClick={handleKeepOnlyFiltered} className="underline">
-                  Keep only these {total} — exclude everything else →
+                  Exclude everything NOT shown (keep these {total}) →
                 </button>
               )}
             </div>
@@ -378,9 +380,9 @@ export default function ReviewsPage() {
               {activeCodebookId &&
                 (confirmingIrrelevantId === r.id ? (
                   <span className="flex items-center gap-2 text-xs">
-                    <span className="text-amber-700">Not relevant to this codebook?</span>
+                    <span className="text-amber-700">Exclude this review from the codebook?</span>
                     <button type="button" onClick={() => handleMarkIrrelevant(r.id)} className="font-medium text-amber-700 underline">
-                      Yes
+                      Yes, exclude
                     </button>
                     <button type="button" onClick={() => setConfirmingIrrelevantId(null)} className="text-gray-500 underline">
                       Cancel
@@ -392,7 +394,7 @@ export default function ReviewsPage() {
                     onClick={() => handleMarkIrrelevant(r.id)}
                     className="text-xs text-amber-700 underline"
                   >
-                    Not relevant →
+                    Exclude from codebook →
                   </button>
                 ))}
               {confirmingDeleteId === r.id ? (
