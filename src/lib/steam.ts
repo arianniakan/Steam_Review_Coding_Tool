@@ -1,6 +1,18 @@
 // Client for Steam's public appreviews and appdetails endpoints.
 // No API key required for either — see:
 // https://partner.steamgames.com/doc/store/getreviews
+//
+// The documented `/appreviews/{appid}?json=1` path now 302-redirects to the
+// normal store page for every request we've tried — including a real
+// browser navigating straight to the URL, not just server-side fetches.
+// Watching the actual Hollow Knight store page make its own "load more
+// reviews" request (DevTools network tab) showed it calls a different,
+// undocumented path instead — `/ajaxappreviews/{appid}` — which still
+// returns the exact same JSON shape (`success`/`query_summary`/`reviews`/
+// `cursor`) using the same query params we already send, no special
+// headers or cookies required. This looks like Steam quietly moved the
+// endpoint rather than started anti-bot-gating it; `/ajaxappreviews/` is
+// what we use now.
 
 export interface SteamReview {
   recommendationid: string;
@@ -43,7 +55,7 @@ export async function fetchReviewPage(
   cursor: string,
   numPerPage = 100,
 ): Promise<SteamReviewsResponse> {
-  const url = new URL(`https://store.steampowered.com/appreviews/${appId}`);
+  const url = new URL(`https://store.steampowered.com/ajaxappreviews/${appId}`);
   url.searchParams.set("json", "1");
   url.searchParams.set("filter", "recent");
   url.searchParams.set("language", "all");
@@ -55,16 +67,15 @@ export async function fetchReviewPage(
   if (!res.ok) {
     throw new Error(`Steam appreviews request failed: ${res.status}`);
   }
-  // Steam's anti-bot protection sometimes redirects this endpoint to the
-  // store homepage instead of returning a non-2xx status — `fetch` follows
-  // that redirect transparently, so the response still reads as 200 OK but
-  // its body is the homepage's HTML, not review JSON. Left unchecked, the
-  // JSON.parse below throws a cryptic "Unexpected token '<'" that leaks
-  // straight to the ingest UI with no indication of the real cause.
+  // Defensive leftover from when we were hitting the old, now-redirecting
+  // `/appreviews/` path: if Steam ever changes `/ajaxappreviews/` the same
+  // way, `fetch` would follow the redirect silently and this is what turns
+  // that into a clear error instead of a cryptic "Unexpected token '<'"
+  // from JSON.parse on the redirected HTML.
   const contentType = res.headers.get("content-type") ?? "";
   if (res.redirected || !contentType.includes("application/json")) {
     throw new Error(
-      "Steam blocked this request (likely anti-bot protection on their end) instead of returning review data — try again in a bit",
+      "Steam didn't return review data for this request (redirected instead) — try again in a bit",
     );
   }
   return res.json();
