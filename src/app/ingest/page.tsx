@@ -1,13 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { parseSteamAppId } from "@/lib/steam";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { BackButton } from "@/components/BackButton";
 import { upsertGameFromSteam } from "@/lib/localDb/queries/games";
 import { upsertReviewsBatch } from "@/lib/localDb/queries/reviews";
-import { runIngestFetch, toIngestRows, type IngestProgress } from "@/lib/ingestClient";
+import {
+  runIngestFetch,
+  runFullIngestFetch,
+  toIngestRows,
+  type IngestProgress,
+  type FullIngestProgress,
+} from "@/lib/ingestClient";
 
 interface IngestResult {
   gameId: string;
@@ -23,10 +29,13 @@ interface IngestResult {
 export default function IngestPage() {
   const [appId, setAppId] = useState("");
   const [maxPages, setMaxPages] = useState(10);
+  const [ingestAll, setIngestAll] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState<IngestProgress | null>(null);
+  const [progress, setProgress] = useState<IngestProgress | FullIngestProgress | null>(null);
+  const [cumulativeFetched, setCumulativeFetched] = useState(0);
   const [result, setResult] = useState<IngestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -39,33 +48,80 @@ export default function IngestPage() {
     }
     setLoading(true);
     setProgress(null);
+    setCumulativeFetched(0);
     setError(null);
     setResult(null);
     try {
-      const data = await runIngestFetch(parsedId, maxPages, setProgress);
+      if (ingestAll) {
+        const controller = new AbortController();
+        abortRef.current = controller;
+        const gameHolder: { current: { id: string; name: string } | null } = { current: null };
+        let insertedTotal = 0;
+        let updatedTotal = 0;
+        let fetchedTotal = 0;
+        const summary = await runFullIngestFetch(
+          parsedId,
+          maxPages,
+          setProgress,
+          async (reviews, gameDetails) => {
+            if (!gameHolder.current) gameHolder.current = await upsertGameFromSteam(parsedId, gameDetails);
+            const rows = toIngestRows(reviews);
+            const { insertedCount, updatedCount } = await upsertReviewsBatch(gameHolder.current.id, rows);
+            insertedTotal += insertedCount;
+            updatedTotal += updatedCount;
+            fetchedTotal += reviews.length;
+            setCumulativeFetched(fetchedTotal);
+          },
+          controller.signal,
+        );
+        const game = gameHolder.current;
+        if (!game) throw new Error("No reviews found for this game");
+        setResult({
+          gameId: game.id,
+          gameName: game.name,
+          steamAppId: summary.steamAppId,
+          fetchedFromSteam: fetchedTotal,
+          ingestedCount: insertedTotal,
+          updatedCount: updatedTotal,
+          pagesFetched: summary.batches * maxPages,
+          hasMore: false,
+        });
+        toast.success(`Ingested ${insertedTotal} review(s) for ${game.name}`);
+      } else {
+        const data = await runIngestFetch(parsedId, maxPages, setProgress);
 
-      const game = await upsertGameFromSteam(data.steamAppId, data.gameDetails);
-      const rows = toIngestRows(data.reviews);
-      const { insertedCount, updatedCount } = await upsertReviewsBatch(game.id, rows);
+        const game = await upsertGameFromSteam(data.steamAppId, data.gameDetails);
+        const rows = toIngestRows(data.reviews);
+        const { insertedCount, updatedCount } = await upsertReviewsBatch(game.id, rows);
 
-      setResult({
-        gameId: game.id,
-        gameName: game.name,
-        steamAppId: data.steamAppId,
-        fetchedFromSteam: data.reviews.length,
-        ingestedCount: insertedCount,
-        updatedCount,
-        pagesFetched: data.pagesFetched,
-        hasMore: data.hasMore,
-      });
-      toast.success(`Ingested ${insertedCount} review(s) for ${game.name}`);
+        setResult({
+          gameId: game.id,
+          gameName: game.name,
+          steamAppId: data.steamAppId,
+          fetchedFromSteam: data.reviews.length,
+          ingestedCount: insertedCount,
+          updatedCount,
+          pagesFetched: data.pagesFetched,
+          hasMore: data.hasMore,
+        });
+        toast.success(`Ingested ${insertedCount} review(s) for ${game.name}`);
+      }
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Something went wrong";
-      setError(message);
-      toast.error(message);
+      if (err instanceof Error && err.name === "AbortError") {
+        toast("Ingestion cancelled — reviews fetched so far were kept", { icon: "ℹ️" });
+      } else {
+        const message = err instanceof Error ? err.message : "Something went wrong";
+        setError(message);
+        toast.error(message);
+      }
     } finally {
       setLoading(false);
+      abortRef.current = null;
     }
+  }
+
+  function handleCancel() {
+    abortRef.current?.abort();
   }
 
   return (
@@ -94,7 +150,7 @@ export default function IngestPage() {
 
         <label className="flex flex-col gap-1">
           <span className="text-sm font-medium">
-            Max pages (100 reviews/page, capped at 30)
+            {ingestAll ? "Reviews per batch (100/page, 30 pages/batch max)" : "Max pages (100 reviews/page, capped at 30)"}
           </span>
           <input
             type="number"
@@ -106,22 +162,57 @@ export default function IngestPage() {
           />
         </label>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50"
-        >
-          {loading
-            ? progress
-              ? `Fetching page ${progress.page} of ${progress.maxPages} (${progress.reviewsSoFar} reviews so far)…`
-              : "Ingesting…"
-            : "Ingest reviews"}
-        </button>
-        {loading && progress && (
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={ingestAll}
+            onChange={(e) => setIngestAll(e.target.checked)}
+          />
+          <span>
+            Ingest ALL reviews — keeps fetching batch after batch until Steam has no more
+            (can take a while for popular games; cancel any time without losing progress already saved)
+          </span>
+        </label>
+
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex-1 rounded-lg bg-black px-4 py-2 text-white disabled:opacity-50"
+          >
+            {loading
+              ? progress && "batch" in progress
+                ? `Batch ${progress.batch}, page ${progress.page} of ${progress.maxPages} (${cumulativeFetched} reviews so far)…`
+                : progress
+                  ? `Fetching page ${progress.page} of ${progress.maxPages} (${progress.reviewsSoFar} reviews so far)…`
+                  : "Ingesting…"
+              : "Ingest reviews"}
+          </button>
+          {loading && ingestAll && (
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="rounded-lg border border-gray-300 px-4 py-2 text-sm"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+        {loading && progress && !("batch" in progress) && (
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
             <div
               className="h-full rounded-full bg-gray-600 transition-[width]"
               style={{ width: `${Math.min(100, (progress.page / progress.maxPages) * 100)}%` }}
+            />
+          </div>
+        )}
+        {loading && progress && "batch" in progress && progress.totalReviewsOnSteam > 0 && (
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+            <div
+              className="h-full rounded-full bg-gray-600 transition-[width]"
+              style={{
+                width: `${Math.min(100, (cumulativeFetched / progress.totalReviewsOnSteam) * 100)}%`,
+              }}
             />
           </div>
         )}

@@ -196,6 +196,7 @@ export default function ProjectMixedReviewsPage() {
   if (sp.voted) filterParams.set("voted", sp.voted);
   if (sp.earlyAccess) filterParams.set("earlyAccess", sp.earlyAccess);
   if (sp.playtime) filterParams.set("playtime", sp.playtime);
+  if (sp.playtimeAtReview) filterParams.set("playtimeAtReview", sp.playtimeAtReview);
   if (sp.from) filterParams.set("from", sp.from);
   if (sp.to) filterParams.set("to", sp.to);
   if (sp.purchase) filterParams.set("purchase", sp.purchase);

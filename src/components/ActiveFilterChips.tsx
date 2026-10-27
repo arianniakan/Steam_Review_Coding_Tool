@@ -22,7 +22,11 @@ function labelFor(key: (typeof FILTER_KEYS)[number], sp: ReviewSearchParams): st
       return "Early access only";
     case "playtime": {
       const tier = PLAYTIME_TIERS.find((t) => t.value === sp.playtime);
-      return tier ? tier.label : `Playtime: ${sp.playtime}`;
+      return tier ? `${tier.label} (overall)` : `Playtime: ${sp.playtime}`;
+    }
+    case "playtimeAtReview": {
+      const tier = PLAYTIME_TIERS.find((t) => t.value === sp.playtimeAtReview);
+      return tier ? `${tier.label} (at review)` : `Playtime at review: ${sp.playtimeAtReview}`;
     }
     case "language":
       return `Language: ${sp.language}`;

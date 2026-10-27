@@ -30,6 +30,7 @@ interface Proposal {
 interface CriteriaFilters {
   voted: string;
   playtime: string;
+  playtimeAtReview: string;
   earlyAccess: string;
   purchase: string;
   language: string;
@@ -42,6 +43,7 @@ interface CriteriaFilters {
 const EMPTY_FILTERS: CriteriaFilters = {
   voted: "",
   playtime: "",
+  playtimeAtReview: "",
   earlyAccess: "",
   purchase: "",
   language: "",
@@ -331,10 +333,26 @@ export function AutoCodebookGenerator({
               </label>
 
               <label className="flex flex-col gap-1">
-                <span>Playtime</span>
+                <span>Playtime (overall)</span>
                 <select
                   value={filters.playtime}
                   onChange={(e) => updateFilter({ playtime: e.target.value })}
+                  className="rounded border border-gray-300 px-2 py-1"
+                >
+                  <option value="">All</option>
+                  {PLAYTIME_TIERS.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span>Playtime (at review)</span>
+                <select
+                  value={filters.playtimeAtReview}
+                  onChange={(e) => updateFilter({ playtimeAtReview: e.target.value })}
                   className="rounded border border-gray-300 px-2 py-1"
                 >
                   <option value="">All</option>

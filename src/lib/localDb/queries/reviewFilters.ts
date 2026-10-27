@@ -15,6 +15,7 @@ export interface ReviewSearchParams {
   voted?: string;
   earlyAccess?: string;
   playtime?: string;
+  playtimeAtReview?: string;
   from?: string;
   to?: string;
   purchase?: string;
@@ -60,6 +61,15 @@ export function buildReviewWhereSql(
   if (tier) {
     push(`"playtimeForever" >= ?`, tier.minMinutes);
     if (tier.maxMinutes !== null) push(`"playtimeForever" < ?`, tier.maxMinutes);
+  }
+
+  // Same tier cutoffs as overall playtime, applied to playtime at the moment
+  // the review was written instead — the two are independent filters (a
+  // long-time owner's review could still have been written early on).
+  const atReviewTier = sp.playtimeAtReview ? getPlaytimeTier(sp.playtimeAtReview) : undefined;
+  if (atReviewTier) {
+    push(`"playtimeAtReview" >= ?`, atReviewTier.minMinutes);
+    if (atReviewTier.maxMinutes !== null) push(`"playtimeAtReview" < ?`, atReviewTier.maxMinutes);
   }
 
   if (sp.from) push(`"timestampCreated" >= ?`, new Date(sp.from).toISOString());

@@ -36,8 +36,18 @@ export async function POST(
     Math.max(Number.isFinite(requestedMaxPages) ? requestedMaxPages : DEFAULT_MAX_PAGES, 1),
     MAX_PAGES_CAP,
   );
+  // "Ingest all" drives this route in a loop from the client, each call
+  // picking up Steam's pagination cursor where the last one left off —
+  // a single request can't safely walk a game's entire review history
+  // (could be hundreds of thousands of reviews) within one serverless
+  // function's execution-time budget.
+  const startCursor = typeof body.cursor === "string" && body.cursor ? body.cursor : "*";
+  // App details don't change between batches of the same loop — the client
+  // already has them after the first call, so skip the redundant Steam
+  // request on every subsequent one.
+  const skipDetails = body.skipDetails === true;
 
-  const details = await fetchAppDetails(appId);
+  const details = skipDetails ? null : await fetchAppDetails(appId);
 
   // Streamed as newline-delimited JSON rather than one final response —
   // a 30-page fetch (each page politely delayed) can take long enough that
@@ -51,7 +61,7 @@ export async function POST(
         controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
       }
       const allReviews: SteamReview[] = [];
-      let cursor = "*";
+      let cursor = startCursor;
       let pagesFetched = 0;
       let totalReviewsOnSteam = 0;
 
@@ -81,6 +91,7 @@ export async function POST(
           pagesFetched,
           hasMore: pagesFetched === maxPages,
           totalReviewsOnSteam,
+          cursor,
         });
       } catch (err) {
         send({ type: "error", error: err instanceof Error ? err.message : "Ingestion failed" });

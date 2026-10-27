@@ -159,6 +159,7 @@ export default function ReviewDetailPage() {
   if (sp.voted) navQuery.set("voted", sp.voted);
   if (sp.earlyAccess) navQuery.set("earlyAccess", sp.earlyAccess);
   if (sp.playtime) navQuery.set("playtime", sp.playtime);
+  if (sp.playtimeAtReview) navQuery.set("playtimeAtReview", sp.playtimeAtReview);
   if (sp.from) navQuery.set("from", sp.from);
   if (sp.to) navQuery.set("to", sp.to);
   if (sp.purchase) navQuery.set("purchase", sp.purchase);

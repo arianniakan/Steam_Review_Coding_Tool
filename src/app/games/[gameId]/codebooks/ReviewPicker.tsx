@@ -17,6 +17,7 @@ interface ReviewRow {
 interface FilterValues {
   voted: string;
   playtime: string;
+  playtimeAtReview: string;
   earlyAccess: string;
   purchase: string;
   language: string;

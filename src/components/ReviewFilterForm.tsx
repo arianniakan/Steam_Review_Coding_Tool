@@ -12,6 +12,7 @@ export const FILTER_KEYS = [
   "purchase",
   "earlyAccess",
   "playtime",
+  "playtimeAtReview",
   "language",
   "from",
   "to",
@@ -131,10 +132,26 @@ export function ReviewFilterForm({
         <div className="col-span-2 sm:col-span-4" />
 
         <label className="flex flex-col gap-1">
-          <span className="font-medium">Playtime</span>
+          <span className="font-medium">Playtime (overall)</span>
           <select
             value={fields.playtime ?? ""}
             onChange={(e) => updateImmediate("playtime", e.target.value)}
+            className="rounded border border-gray-300 px-2 py-1"
+          >
+            <option value="">All</option>
+            {PLAYTIME_TIERS.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="font-medium">Playtime (at review)</span>
+          <select
+            value={fields.playtimeAtReview ?? ""}
+            onChange={(e) => updateImmediate("playtimeAtReview", e.target.value)}
             className="rounded border border-gray-300 px-2 py-1"
           >
             <option value="">All</option>
