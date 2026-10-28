@@ -236,66 +236,72 @@ export async function upsertReviewsBatch(
   );
   const existingIds = new Set(existing.rows.map((r) => r.steamReviewId));
 
-  for (const row of rows) {
-    const id = newId();
-    await db.query(
-      `INSERT INTO "Review" (
-        "id", "gameId", "steamReviewId", "text", "votedUp", "playtimeForever", "votesUp",
-        "votesFunny", "weightedVoteScore", "timestampCreated", "timestampUpdated",
-        "writtenDuringEarlyAccess", "steamPurchase", "receivedForFree", "commentCount",
-        "language", "textLength", "playtimeAtReview", "playtimeLastTwoWeeks",
-        "authorNumGamesOwned", "authorNumReviews", "authorLastPlayed"
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
-      ON CONFLICT ("steamReviewId") DO UPDATE SET
-        -- A manually-edited review (originalText IS NOT NULL) keeps its
-        -- edited text/textLength across re-syncs instead of Steam's refresh
-        -- silently clobbering both the edit and the preserved original in
-        -- one step. Every other column still always refreshes from Steam.
-        "text" = CASE WHEN "Review"."originalText" IS NULL THEN EXCLUDED."text" ELSE "Review"."text" END,
-        "textLength" = CASE WHEN "Review"."originalText" IS NULL THEN EXCLUDED."textLength" ELSE "Review"."textLength" END,
-        "votedUp" = EXCLUDED."votedUp",
-        "playtimeForever" = EXCLUDED."playtimeForever",
-        "votesUp" = EXCLUDED."votesUp",
-        "votesFunny" = EXCLUDED."votesFunny",
-        "weightedVoteScore" = EXCLUDED."weightedVoteScore",
-        "timestampCreated" = EXCLUDED."timestampCreated",
-        "timestampUpdated" = EXCLUDED."timestampUpdated",
-        "writtenDuringEarlyAccess" = EXCLUDED."writtenDuringEarlyAccess",
-        "steamPurchase" = EXCLUDED."steamPurchase",
-        "receivedForFree" = EXCLUDED."receivedForFree",
-        "commentCount" = EXCLUDED."commentCount",
-        "language" = EXCLUDED."language",
-        "playtimeAtReview" = EXCLUDED."playtimeAtReview",
-        "playtimeLastTwoWeeks" = EXCLUDED."playtimeLastTwoWeeks",
-        "authorNumGamesOwned" = EXCLUDED."authorNumGamesOwned",
-        "authorNumReviews" = EXCLUDED."authorNumReviews",
-        "authorLastPlayed" = EXCLUDED."authorLastPlayed"`,
-      [
-        id,
-        gameId,
-        row.steamReviewId,
-        row.text,
-        row.votedUp,
-        row.playtimeForever,
-        row.votesUp,
-        row.votesFunny,
-        row.weightedVoteScore,
-        row.timestampCreated,
-        row.timestampUpdated,
-        row.writtenDuringEarlyAccess,
-        row.steamPurchase,
-        row.receivedForFree,
-        row.commentCount,
-        row.language,
-        row.textLength,
-        row.playtimeAtReview,
-        row.playtimeLastTwoWeeks,
-        row.authorNumGamesOwned,
-        row.authorNumReviews,
-        row.authorLastPlayed,
-      ],
-    );
-  }
+  // One transaction for the whole batch instead of an implicit commit per
+  // row — a big "ingest all" run calls this with up to 3000 rows at a time,
+  // and committing each row separately was the dominant cost of writing a
+  // batch into PGlite's WASM-backed storage.
+  await db.transaction(async (tx) => {
+    for (const row of rows) {
+      const id = newId();
+      await tx.query(
+        `INSERT INTO "Review" (
+          "id", "gameId", "steamReviewId", "text", "votedUp", "playtimeForever", "votesUp",
+          "votesFunny", "weightedVoteScore", "timestampCreated", "timestampUpdated",
+          "writtenDuringEarlyAccess", "steamPurchase", "receivedForFree", "commentCount",
+          "language", "textLength", "playtimeAtReview", "playtimeLastTwoWeeks",
+          "authorNumGamesOwned", "authorNumReviews", "authorLastPlayed"
+        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+        ON CONFLICT ("steamReviewId") DO UPDATE SET
+          -- A manually-edited review (originalText IS NOT NULL) keeps its
+          -- edited text/textLength across re-syncs instead of Steam's refresh
+          -- silently clobbering both the edit and the preserved original in
+          -- one step. Every other column still always refreshes from Steam.
+          "text" = CASE WHEN "Review"."originalText" IS NULL THEN EXCLUDED."text" ELSE "Review"."text" END,
+          "textLength" = CASE WHEN "Review"."originalText" IS NULL THEN EXCLUDED."textLength" ELSE "Review"."textLength" END,
+          "votedUp" = EXCLUDED."votedUp",
+          "playtimeForever" = EXCLUDED."playtimeForever",
+          "votesUp" = EXCLUDED."votesUp",
+          "votesFunny" = EXCLUDED."votesFunny",
+          "weightedVoteScore" = EXCLUDED."weightedVoteScore",
+          "timestampCreated" = EXCLUDED."timestampCreated",
+          "timestampUpdated" = EXCLUDED."timestampUpdated",
+          "writtenDuringEarlyAccess" = EXCLUDED."writtenDuringEarlyAccess",
+          "steamPurchase" = EXCLUDED."steamPurchase",
+          "receivedForFree" = EXCLUDED."receivedForFree",
+          "commentCount" = EXCLUDED."commentCount",
+          "language" = EXCLUDED."language",
+          "playtimeAtReview" = EXCLUDED."playtimeAtReview",
+          "playtimeLastTwoWeeks" = EXCLUDED."playtimeLastTwoWeeks",
+          "authorNumGamesOwned" = EXCLUDED."authorNumGamesOwned",
+          "authorNumReviews" = EXCLUDED."authorNumReviews",
+          "authorLastPlayed" = EXCLUDED."authorLastPlayed"`,
+        [
+          id,
+          gameId,
+          row.steamReviewId,
+          row.text,
+          row.votedUp,
+          row.playtimeForever,
+          row.votesUp,
+          row.votesFunny,
+          row.weightedVoteScore,
+          row.timestampCreated,
+          row.timestampUpdated,
+          row.writtenDuringEarlyAccess,
+          row.steamPurchase,
+          row.receivedForFree,
+          row.commentCount,
+          row.language,
+          row.textLength,
+          row.playtimeAtReview,
+          row.playtimeLastTwoWeeks,
+          row.authorNumGamesOwned,
+          row.authorNumReviews,
+          row.authorLastPlayed,
+        ],
+      );
+    }
+  });
 
   return {
     insertedCount: rows.length - existingIds.size,
