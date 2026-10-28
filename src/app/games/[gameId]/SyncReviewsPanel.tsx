@@ -7,18 +7,24 @@ import { upsertReviewsBatch } from "@/lib/localDb/queries/reviews";
 import {
   runIngestFetch,
   runFullIngestFetch,
+  runParallelFullIngestFetch,
   toIngestRows,
   type IngestProgress,
   type FullIngestProgress,
+  type ParallelGroupState,
 } from "@/lib/ingestClient";
 import {
   loadIngestCheckpoint,
   saveIngestCheckpoint,
   clearIngestCheckpoint,
+  loadParallelIngestCheckpoint,
+  saveParallelIngestCheckpoint,
+  clearParallelIngestCheckpoint,
 } from "@/lib/ingestCheckpoint";
 import { useBackgroundTabWarning } from "@/lib/useBackgroundTabWarning";
+import { STEAM_LANGUAGE_GROUPS } from "@/lib/steamLanguageGroups";
 
-const DEFAULT_MAX_PAGES = 10;
+const DEFAULT_MAX_PAGES = 30;
 
 // "Re-sync" for an existing game previously meant leaving its context
 // entirely and re-pasting its Steam URL/App ID into the generic top-level
@@ -32,18 +38,87 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<IngestProgress | FullIngestProgress | null>(null);
   const [cumulativeFetched, setCumulativeFetched] = useState(0);
+  const [parallelTotalOnSteam, setParallelTotalOnSteam] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
   useBackgroundTabWarning(loading && syncAll);
 
   const pendingCheckpoint = loadIngestCheckpoint(game.steamAppId);
+  const pendingParallelCheckpoint = loadParallelIngestCheckpoint(game.steamAppId);
 
   async function handleSync() {
     setLoading(true);
     setProgress(null);
     setCumulativeFetched(0);
+    setParallelTotalOnSteam(0);
     try {
-      if (syncAll) {
+      if (syncAll && language === "parallel") {
+        const controller = new AbortController();
+        abortRef.current = controller;
+        let gameEnsure: Promise<Game> | null = null;
+        const ensureGame = (details: Parameters<typeof upsertGameFromSteam>[1]) => {
+          if (!gameEnsure) gameEnsure = upsertGameFromSteam(game.steamAppId, details);
+          return gameEnsure;
+        };
+        let fetchedTotal = 0;
+        let insertedTotal = 0;
+        let updatedTotal = 0;
+
+        const initialStates: Record<string, ParallelGroupState> = {};
+        const existingParallel = loadParallelIngestCheckpoint(game.steamAppId);
+        if (existingParallel) {
+          const totalSoFar = existingParallel.streams.reduce((s, x) => s + x.fetchedTotal, 0);
+          const resume = window.confirm(
+            `Found an interrupted "sync all (parallel)" for this game: ${totalSoFar} review(s) already fetched, ` +
+              `last updated ${new Date(existingParallel.updatedAt).toLocaleString()}.\n\n` +
+              `Resume from there? Cancel to start over from scratch.`,
+          );
+          if (resume) {
+            for (const s of existingParallel.streams) initialStates[s.languages] = { ...s };
+            fetchedTotal = totalSoFar;
+            insertedTotal = existingParallel.streams.reduce((s, x) => s + x.insertedTotal, 0);
+            updatedTotal = existingParallel.streams.reduce((s, x) => s + x.updatedTotal, 0);
+            setCumulativeFetched(fetchedTotal);
+          } else {
+            clearParallelIngestCheckpoint(game.steamAppId);
+          }
+        }
+
+        const persistParallelCheckpoint = (states: ParallelGroupState[]) => {
+          setParallelTotalOnSteam(states.reduce((s, x) => s + x.totalReviewsOnSteam, 0));
+          saveParallelIngestCheckpoint({
+            steamAppId: game.steamAppId,
+            pagesPerBatch: maxPages,
+            streams: states.map((s) => ({ ...s, cursor: s.cursor ?? "*" })),
+            updatedAt: new Date().toISOString(),
+          });
+        };
+
+        const summary = await runParallelFullIngestFetch(
+          game.steamAppId,
+          maxPages,
+          STEAM_LANGUAGE_GROUPS,
+          initialStates,
+          async (reviews, gameDetails) => {
+            const g = await ensureGame(gameDetails);
+            const rows = toIngestRows(reviews);
+            return upsertReviewsBatch(g.id, rows);
+          },
+          (ft, it, ut) => {
+            fetchedTotal = ft;
+            insertedTotal = it;
+            updatedTotal = ut;
+            setCumulativeFetched(ft);
+          },
+          controller,
+          persistParallelCheckpoint,
+        );
+        clearParallelIngestCheckpoint(game.steamAppId);
+        const updatedGame = gameEnsure ? await gameEnsure : await upsertGameFromSteam(summary.steamAppId, summary.gameDetails);
+        await markGameSynced(updatedGame.id, fetchedTotal);
+        onSynced({ ...updatedGame, lastIngestedAt: new Date().toISOString(), lastSyncReviewCount: fetchedTotal });
+        toast.success(`Synced — ${insertedTotal} new, ${updatedTotal} refreshed across ${STEAM_LANGUAGE_GROUPS.length} parallel language streams`);
+      } else if (syncAll) {
         const controller = new AbortController();
         abortRef.current = controller;
         const gameHolder: { current: Game | null } = { current: null };
@@ -114,7 +189,10 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
         onSynced({ ...updatedGame, lastIngestedAt: new Date().toISOString(), lastSyncReviewCount: fetchedTotal });
         toast.success(`Synced — ${insertedTotal} new, ${updatedTotal} refreshed`);
       } else {
-        const data = await runIngestFetch(game.steamAppId, maxPages, setProgress, language);
+        // "Parallel" only makes sense across a full multi-batch run — a
+        // single bounded batch falls back to the plain "all" stream instead
+        // of sending the meaningless literal value "parallel" to Steam.
+        const data = await runIngestFetch(game.steamAppId, maxPages, setProgress, language === "parallel" ? "all" : language);
         const updatedGame = await upsertGameFromSteam(data.steamAppId, data.gameDetails);
         const rows = toIngestRows(data.reviews);
         const { insertedCount, updatedCount } = await upsertReviewsBatch(updatedGame.id, rows);
@@ -170,16 +248,22 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
         >
           <option value="all">All languages</option>
           <option value="english">English only</option>
+          {syncAll && <option value="parallel">All languages (parallel, faster)</option>}
         </select>
         <span className="text-xs text-gray-500">
-          English only is much faster for big, popular games.
+          {language === "parallel"
+            ? "Fetches several languages at once instead of one long sequential stream — faster, but puts more concurrent load on Steam's endpoint."
+            : "English only is much faster for big, popular games."}
         </span>
       </label>
       <label className="mt-2 flex items-center gap-2 text-xs text-gray-600">
         <input
           type="checkbox"
           checked={syncAll}
-          onChange={(e) => setSyncAll(e.target.checked)}
+          onChange={(e) => {
+            setSyncAll(e.target.checked);
+            if (!e.target.checked && language === "parallel") setLanguage("all");
+          }}
         />
         <span>
           Sync ALL reviews — keeps fetching until Steam has no more (cancel any time; keep this
@@ -194,6 +278,13 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
           resume it.
         </p>
       )}
+      {pendingParallelCheckpoint && !loading && (
+        <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+          Found an interrupted &quot;sync all (parallel)&quot; for this game:{" "}
+          {pendingParallelCheckpoint.streams.reduce((s, x) => s + x.fetchedTotal, 0)} review(s) already fetched.
+          Selecting &quot;All languages (parallel)&quot; and syncing will offer to resume it.
+        </p>
+      )}
       <div className="mt-3 flex gap-2">
         <button
           type="button"
@@ -202,11 +293,13 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
           className="rounded-lg bg-black px-4 py-1.5 text-sm text-white disabled:opacity-50"
         >
           {loading
-            ? progress && "batch" in progress
-              ? `Batch ${progress.batch}, page ${progress.page} of ${progress.maxPages} (${cumulativeFetched} so far)…`
-              : progress
-                ? `Fetching page ${progress.page} of ${progress.maxPages} (${progress.reviewsSoFar} so far)…`
-                : "Syncing…"
+            ? syncAll && language === "parallel"
+              ? `Fetching in parallel across ${STEAM_LANGUAGE_GROUPS.length} language streams… (${cumulativeFetched} so far)…`
+              : progress && "batch" in progress
+                ? `Batch ${progress.batch}, page ${progress.page} of ${progress.maxPages} (${cumulativeFetched} so far)…`
+                : progress
+                  ? `Fetching page ${progress.page} of ${progress.maxPages} (${progress.reviewsSoFar} so far)…`
+                  : "Syncing…"
             : "Sync more reviews →"}
         </button>
         {loading && syncAll && (
@@ -219,7 +312,15 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
           </button>
         )}
       </div>
-      {loading && progress && !("batch" in progress) && (
+      {loading && syncAll && language === "parallel" && parallelTotalOnSteam > 0 && (
+        <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-gray-100">
+          <div
+            className="h-full rounded-full bg-gray-600 transition-[width]"
+            style={{ width: `${Math.min(100, (cumulativeFetched / parallelTotalOnSteam) * 100)}%` }}
+          />
+        </div>
+      )}
+      {loading && !(syncAll && language === "parallel") && progress && !("batch" in progress) && (
         <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-gray-100">
           <div
             className="h-full rounded-full bg-gray-600 transition-[width]"
@@ -227,7 +328,7 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
           />
         </div>
       )}
-      {loading && progress && "batch" in progress && progress.totalReviewsOnSteam > 0 && (
+      {loading && !(syncAll && language === "parallel") && progress && "batch" in progress && progress.totalReviewsOnSteam > 0 && (
         <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-gray-100">
           <div
             className="h-full rounded-full bg-gray-600 transition-[width]"

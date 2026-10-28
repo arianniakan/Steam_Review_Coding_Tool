@@ -144,6 +144,118 @@ export async function runFullIngestFetch(
   return { steamAppId, gameDetails: gameDetails!, totalFetched, batches: batch };
 }
 
+export interface ParallelGroupState {
+  languages: string;
+  cursor?: string;
+  fetchedTotal: number;
+  insertedTotal: number;
+  updatedTotal: number;
+  totalReviewsOnSteam: number;
+}
+
+// "All languages (parallel)" — Steam's own pagination cursor is strictly
+// sequential within one query (you can't know page 2's cursor without
+// having fetched page 1), so the only real way to parallelize a game's full
+// review history is to split it into several independent queries and run
+// their cursor streams concurrently. Steam's `language` filter accepts a
+// comma-separated list, so each group below becomes its own stream rather
+// than fetching every language one at a time. `onBatch` returns the upsert
+// counts (unlike runFullIngestFetch's) so this function can keep accurate
+// per-stream and aggregate totals without the caller re-deriving them.
+export async function runParallelFullIngestFetch(
+  appId: number,
+  pagesPerBatch: number,
+  groups: string[][],
+  initialStates: Record<string, ParallelGroupState>,
+  onBatch: (
+    reviews: SteamReview[],
+    gameDetails: SteamAppDetails,
+  ) => Promise<{ insertedCount: number; updatedCount: number }>,
+  onTotalsChange: (fetchedTotal: number, insertedTotal: number, updatedTotal: number) => void,
+  controller: AbortController,
+  onCheckpoint?: (states: ParallelGroupState[]) => void,
+): Promise<{ steamAppId: number; gameDetails: SteamAppDetails; totalBatches: number }> {
+  const states: Record<string, ParallelGroupState> = {};
+  for (const group of groups) {
+    const key = group.join(",");
+    states[key] = initialStates[key] ?? {
+      languages: key,
+      fetchedTotal: 0,
+      insertedTotal: 0,
+      updatedTotal: 0,
+      totalReviewsOnSteam: 0,
+    };
+  }
+
+  function emitTotals() {
+    const all = Object.values(states);
+    onTotalsChange(
+      all.reduce((s, x) => s + x.fetchedTotal, 0),
+      all.reduce((s, x) => s + x.insertedTotal, 0),
+      all.reduce((s, x) => s + x.updatedTotal, 0),
+    );
+  }
+  emitTotals();
+
+  let steamAppId = appId;
+  let anyGameDetails: SteamAppDetails | null = null;
+
+  const settled = await Promise.allSettled(
+    groups.map((group) => {
+      const key = group.join(",");
+      const state = states[key];
+      return runFullIngestFetch(
+        appId,
+        pagesPerBatch,
+        () => {}, // per-page progress isn't meaningful to show across several concurrent streams
+        async (reviews, gameDetails) => {
+          const { insertedCount, updatedCount } = await onBatch(reviews, gameDetails);
+          state.fetchedTotal += reviews.length;
+          state.insertedTotal += insertedCount;
+          state.updatedTotal += updatedCount;
+          emitTotals();
+        },
+        controller.signal,
+        {
+          language: key,
+          startCursor: state.cursor,
+          onCheckpoint: (cursor, totalReviewsOnSteam) => {
+            state.cursor = cursor;
+            state.totalReviewsOnSteam = totalReviewsOnSteam;
+            onCheckpoint?.(Object.values(states));
+          },
+        },
+      ).catch((err) => {
+        // A real error in one stream (not the shared cancel signal) should
+        // stop the others too, instead of leaving them running unseen in
+        // the background after this function has already thrown.
+        if (!(err instanceof DOMException && err.name === "AbortError")) controller.abort();
+        throw err;
+      });
+    }),
+  );
+
+  let totalBatches = 0;
+  for (const result of settled) {
+    if (result.status === "fulfilled") {
+      steamAppId = result.value.steamAppId;
+      anyGameDetails = result.value.gameDetails;
+      totalBatches += result.value.batches;
+    }
+  }
+
+  const rejections = settled.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+  // Prefer surfacing the real error over an AbortError caused by our own
+  // cascading abort of the sibling streams above.
+  const failure =
+    rejections.find((r) => !(r.reason instanceof DOMException && r.reason.name === "AbortError")) ??
+    rejections[0];
+  if (failure) throw failure.reason;
+
+  if (!anyGameDetails) throw new Error("No reviews found for this game");
+  return { steamAppId, gameDetails: anyGameDetails, totalBatches };
+}
+
 export function toIngestRows(reviews: SteamReview[]): IngestReviewRow[] {
   return reviews.map((r) => ({
     steamReviewId: r.recommendationid,

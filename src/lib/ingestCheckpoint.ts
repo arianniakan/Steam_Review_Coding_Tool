@@ -45,3 +45,51 @@ export function clearIngestCheckpoint(steamAppId: number): void {
     // ignore
   }
 }
+
+// Separate checkpoint shape for "All languages (parallel)" — one cursor per
+// concurrently-running language-group stream instead of a single cursor, so
+// each stream can resume independently. Kept under its own key so it can
+// never collide with (or get misread as) a single-stream checkpoint.
+const PARALLEL_KEY_PREFIX = "steamIngestAllParallelCheckpoint:";
+
+export interface ParallelStreamCheckpoint {
+  languages: string;
+  cursor: string;
+  fetchedTotal: number;
+  insertedTotal: number;
+  updatedTotal: number;
+  totalReviewsOnSteam: number;
+}
+
+export interface IngestAllParallelCheckpoint {
+  steamAppId: number;
+  pagesPerBatch: number;
+  streams: ParallelStreamCheckpoint[];
+  updatedAt: string;
+}
+
+export function loadParallelIngestCheckpoint(steamAppId: number): IngestAllParallelCheckpoint | null {
+  try {
+    const raw = localStorage.getItem(PARALLEL_KEY_PREFIX + steamAppId);
+    if (!raw) return null;
+    return JSON.parse(raw) as IngestAllParallelCheckpoint;
+  } catch {
+    return null;
+  }
+}
+
+export function saveParallelIngestCheckpoint(checkpoint: IngestAllParallelCheckpoint): void {
+  try {
+    localStorage.setItem(PARALLEL_KEY_PREFIX + checkpoint.steamAppId, JSON.stringify(checkpoint));
+  } catch {
+    // Best-effort, same as the single-stream checkpoint.
+  }
+}
+
+export function clearParallelIngestCheckpoint(steamAppId: number): void {
+  try {
+    localStorage.removeItem(PARALLEL_KEY_PREFIX + steamAppId);
+  } catch {
+    // ignore
+  }
+}

@@ -3,7 +3,7 @@ import { fetchAppDetails, fetchReviewPage, type SteamReview } from "@/lib/steam"
 
 const MAX_PAGES_CAP = 30;
 const DEFAULT_MAX_PAGES = 10;
-const PAGE_DELAY_MS = 200; // be polite to Steam's public endpoint
+const PAGE_DELAY_MS = 100; // be polite to Steam's public endpoint, but don't dawdle
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
