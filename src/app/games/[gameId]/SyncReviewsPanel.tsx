@@ -58,7 +58,7 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
     syncAll && language === "parallel"
       ? parallelTotalOnSteam || (availableCount ?? 0)
       : progress && "batch" in progress
-        ? progress.totalReviewsOnSteam
+        ? progress.totalReviewsOnSteam || (availableCount ?? 0)
         : (availableCount ?? 0);
   const eta = useIngestEta(loading && syncAll, cumulativeFetched, etaTotal);
 
@@ -167,6 +167,11 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
         let fetchedTotal = 0;
         let startCursor: string | undefined;
         let effectiveLanguage = language;
+        // Resuming always starts from a saved (non-"*") cursor, and Steam
+        // only ever reports the review-count total on a cursor="*" page —
+        // without seeding this, a resumed run would show no total at all
+        // for its entire first batch.
+        let initialTotalReviewsOnSteam = availableCount ?? 0;
 
         const checkpoint = loadIngestCheckpoint(game.steamAppId);
         if (checkpoint) {
@@ -182,6 +187,7 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
             insertedTotal = checkpoint.insertedTotal;
             updatedTotal = checkpoint.updatedTotal;
             fetchedTotal = checkpoint.fetchedTotal;
+            initialTotalReviewsOnSteam = checkpoint.totalReviewsOnSteam || initialTotalReviewsOnSteam;
             setCumulativeFetched(fetchedTotal);
           } else {
             clearIngestCheckpoint(game.steamAppId);
@@ -205,6 +211,7 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
           {
             language: effectiveLanguage,
             startCursor,
+            initialTotalReviewsOnSteam,
             onCheckpoint: (cursor, totalReviewsOnSteam) => {
               saveIngestCheckpoint({
                 steamAppId: game.steamAppId,

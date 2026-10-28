@@ -116,6 +116,12 @@ export interface RunFullIngestOptions {
   // fetches app details (never skipDetails), since a fresh page load means
   // the caller has no gameDetails of its own yet even if resuming mid-run.
   startCursor?: string;
+  // Seeds the "last known good" review-count total this run carries
+  // forward across batches. Needed when resuming: Steam only includes
+  // query_summary.total_reviews on a cursor="*" page, so a resumed run
+  // (which always starts from a saved, non-"*" cursor) would otherwise
+  // have no total at all for its entire first batch.
+  initialTotalReviewsOnSteam?: number;
   // Fired after every batch (including the final, reviews-less one) with
   // the latest cursor and running Steam total, so the caller can persist a
   // resume point — a multi-hour "ingest all" run has a lot to lose to a
@@ -148,7 +154,7 @@ export async function runFullIngestFetch(
   // entirely, which would otherwise make the running total silently drop
   // to 0 on every batch after the first (each batch starts from a saved
   // cursor, not "*"). Carry the last known good value forward instead.
-  let lastKnownTotalReviewsOnSteam = 0;
+  let lastKnownTotalReviewsOnSteam = options?.initialTotalReviewsOnSteam ?? 0;
 
   while (true) {
     if (signal?.aborted) throw new DOMException("Ingestion cancelled", "AbortError");
@@ -254,6 +260,7 @@ export async function runParallelFullIngestFetch(
         {
           language: key,
           startCursor: state.cursor,
+          initialTotalReviewsOnSteam: state.totalReviewsOnSteam,
           onCheckpoint: (cursor, totalReviewsOnSteam) => {
             state.cursor = cursor;
             state.totalReviewsOnSteam = totalReviewsOnSteam;
