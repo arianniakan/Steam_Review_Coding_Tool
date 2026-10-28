@@ -143,6 +143,12 @@ export async function runFullIngestFetch(
   let totalPagesFetched = 0;
   let gameDetails: SteamAppDetails | null = null;
   let steamAppId = appId;
+  // Steam only includes query_summary.total_reviews on the very first page
+  // of a query (cursor="*") — every continuation-cursor page omits it
+  // entirely, which would otherwise make the running total silently drop
+  // to 0 on every batch after the first (each batch starts from a saved
+  // cursor, not "*"). Carry the last known good value forward instead.
+  let lastKnownTotalReviewsOnSteam = 0;
 
   while (true) {
     if (signal?.aborted) throw new DOMException("Ingestion cancelled", "AbortError");
@@ -150,18 +156,23 @@ export async function runFullIngestFetch(
     const data = await postIngest(
       appId,
       { maxPages: pagesPerBatch, cursor, skipDetails: batch > 1, language: options?.language },
-      (p) => onProgress({ ...p, batch }),
+      (p) => {
+        if (p.totalReviewsOnSteam > 0) lastKnownTotalReviewsOnSteam = p.totalReviewsOnSteam;
+        onProgress({ ...p, batch, totalReviewsOnSteam: lastKnownTotalReviewsOnSteam || p.totalReviewsOnSteam });
+      },
       signal,
     );
     if (batch === 1) {
       gameDetails = data.gameDetails;
       steamAppId = data.steamAppId;
     }
+    if (data.totalReviewsOnSteam > 0) lastKnownTotalReviewsOnSteam = data.totalReviewsOnSteam;
+    const effectiveTotal = lastKnownTotalReviewsOnSteam || data.totalReviewsOnSteam;
     totalFetched += data.reviews.length;
     totalPagesFetched += data.pagesFetched;
     if (data.reviews.length > 0) await onBatch(data.reviews, gameDetails!);
     cursor = data.cursor;
-    options?.onCheckpoint?.(cursor, data.totalReviewsOnSteam);
+    options?.onCheckpoint?.(cursor, effectiveTotal);
     if (!data.hasMore) break;
   }
 

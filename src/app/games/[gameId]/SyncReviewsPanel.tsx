@@ -24,6 +24,7 @@ import {
 } from "@/lib/ingestCheckpoint";
 import { useBackgroundTabWarning } from "@/lib/useBackgroundTabWarning";
 import { STEAM_LANGUAGE_GROUPS } from "@/lib/steamLanguageGroups";
+import { useIngestEta, formatDuration } from "@/lib/useIngestEta";
 
 const DEFAULT_MAX_PAGES = 30;
 
@@ -48,6 +49,18 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
 
   const pendingCheckpoint = loadIngestCheckpoint(game.steamAppId);
   const pendingParallelCheckpoint = loadParallelIngestCheckpoint(game.steamAppId);
+
+  // The denominator for the ETA/progress estimate: the parallel run's own
+  // running total once it has one, otherwise the sequential run's
+  // per-batch total, falling back to the upfront count check before either
+  // has reported anything yet.
+  const etaTotal =
+    syncAll && language === "parallel"
+      ? parallelTotalOnSteam || (availableCount ?? 0)
+      : progress && "batch" in progress
+        ? progress.totalReviewsOnSteam
+        : (availableCount ?? 0);
+  const eta = useIngestEta(loading && syncAll, cumulativeFetched, etaTotal);
 
   // "parallel" isn't a real Steam language value — it means "all languages,
   // split into concurrent streams" — so the count check always asks for the
@@ -348,29 +361,30 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
           </button>
         )}
       </div>
-      {loading && syncAll && language === "parallel" && parallelTotalOnSteam > 0 && (
-        <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-gray-100">
-          <div
-            className="h-full rounded-full bg-gray-600 transition-[width]"
-            style={{ width: `${Math.min(100, (cumulativeFetched / parallelTotalOnSteam) * 100)}%` }}
-          />
-        </div>
+      {loading && syncAll && etaTotal > 0 && (
+        <>
+          <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-gray-100">
+            <div
+              className="h-full rounded-full bg-gray-600 transition-[width]"
+              style={{ width: `${Math.min(100, (cumulativeFetched / etaTotal) * 100)}%` }}
+            />
+          </div>
+          <p className="mt-1 text-xs text-gray-500">
+            {cumulativeFetched.toLocaleString()} of {etaTotal.toLocaleString()} reviews (
+            {Math.min(100, (cumulativeFetched / etaTotal) * 100).toFixed(1)}%)
+            {eta.remainingSec !== null
+              ? ` — ~${formatDuration(eta.remainingSec)} remaining`
+              : cumulativeFetched > 0
+                ? " — estimating time remaining…"
+                : ""}
+          </p>
+        </>
       )}
-      {loading && !(syncAll && language === "parallel") && progress && !("batch" in progress) && (
+      {loading && !syncAll && progress && !("batch" in progress) && (
         <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-gray-100">
           <div
             className="h-full rounded-full bg-gray-600 transition-[width]"
             style={{ width: `${Math.min(100, (progress.page / progress.maxPages) * 100)}%` }}
-          />
-        </div>
-      )}
-      {loading && !(syncAll && language === "parallel") && progress && "batch" in progress && progress.totalReviewsOnSteam > 0 && (
-        <div className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-gray-100">
-          <div
-            className="h-full rounded-full bg-gray-600 transition-[width]"
-            style={{
-              width: `${Math.min(100, (cumulativeFetched / progress.totalReviewsOnSteam) * 100)}%`,
-            }}
           />
         </div>
       )}
