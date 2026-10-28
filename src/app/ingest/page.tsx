@@ -245,7 +245,7 @@ export default function IngestPage() {
           </span>
         </label>
 
-        {pendingCheckpoint && (
+        {pendingCheckpoint && !loading && (
           <p className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             Found an interrupted &quot;ingest all&quot; for this game: {pendingCheckpoint.fetchedTotal} review(s)
             already fetched{pendingCheckpoint.totalReviewsOnSteam ? ` of ~${pendingCheckpoint.totalReviewsOnSteam}` : ""}{" "}

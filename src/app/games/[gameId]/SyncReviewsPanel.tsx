@@ -186,7 +186,7 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
           tab in the foreground, backgrounded tabs get throttled hard by the browser)
         </span>
       </label>
-      {pendingCheckpoint && (
+      {pendingCheckpoint && !loading && (
         <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
           Found an interrupted &quot;sync all&quot; for this game: {pendingCheckpoint.fetchedTotal} review(s)
           already fetched{pendingCheckpoint.totalReviewsOnSteam ? ` of ~${pendingCheckpoint.totalReviewsOnSteam}` : ""}{" "}
