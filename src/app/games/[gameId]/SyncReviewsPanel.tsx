@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { upsertGameFromSteam, markGameSynced, type Game } from "@/lib/localDb/queries/games";
 import { upsertReviewsBatch } from "@/lib/localDb/queries/reviews";
@@ -8,6 +8,7 @@ import {
   runIngestFetch,
   runFullIngestFetch,
   runParallelFullIngestFetch,
+  fetchReviewCount,
   toIngestRows,
   type IngestProgress,
   type FullIngestProgress,
@@ -39,6 +40,8 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
   const [progress, setProgress] = useState<IngestProgress | FullIngestProgress | null>(null);
   const [cumulativeFetched, setCumulativeFetched] = useState(0);
   const [parallelTotalOnSteam, setParallelTotalOnSteam] = useState(0);
+  const [availableCount, setAvailableCount] = useState<number | null>(null);
+  const [availableCountLoading, setAvailableCountLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   useBackgroundTabWarning(loading && syncAll);
@@ -46,11 +49,35 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
   const pendingCheckpoint = loadIngestCheckpoint(game.steamAppId);
   const pendingParallelCheckpoint = loadParallelIngestCheckpoint(game.steamAppId);
 
+  // "parallel" isn't a real Steam language value — it means "all languages,
+  // split into concurrent streams" — so the count check always asks for the
+  // same thing a parallel run would actually cover.
+  const countLanguage = language === "parallel" ? "all" : language;
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (!cancelled) setAvailableCountLoading(true);
+      const count = await fetchReviewCount(game.steamAppId, countLanguage);
+      if (!cancelled) {
+        setAvailableCount(count);
+        setAvailableCountLoading(false);
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [game.steamAppId, countLanguage]);
+
   async function handleSync() {
     setLoading(true);
     setProgress(null);
     setCumulativeFetched(0);
-    setParallelTotalOnSteam(0);
+    // Seeded from the upfront count check so the progress bar has a real
+    // denominator immediately instead of sitting at 0% until the first
+    // batch's own total comes back.
+    setParallelTotalOnSteam(availableCount ?? 0);
     try {
       if (syncAll && language === "parallel") {
         const controller = new AbortController();
@@ -225,6 +252,15 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
       <p className="mt-1 text-xs text-gray-500">
         Re-fetches from Steam for this game — already-ingested reviews are refreshed in place
         (manually edited reviews keep their edited text), new ones are added.
+      </p>
+      <p className="mt-1 text-xs text-gray-500">
+        {availableCountLoading
+          ? "Checking how many reviews Steam has…"
+          : availableCount !== null
+            ? `${availableCount.toLocaleString()} review(s) on Steam${
+                countLanguage !== "all" ? ` (${countLanguage})` : ""
+              }`
+            : "Couldn't check Steam's review count"}
       </p>
       <label className="mt-3 flex max-w-xs flex-col gap-1 text-sm">
         <span className="font-medium">

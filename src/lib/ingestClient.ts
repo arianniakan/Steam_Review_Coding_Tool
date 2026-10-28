@@ -18,6 +18,22 @@ export interface IngestStreamResult {
   cursor: string;
 }
 
+// Lets the Ingest/Sync forms show "~N reviews available" before the user
+// commits to a run, and seeds the progress bar's denominator immediately
+// instead of waiting for the first batch. Returns null on failure (e.g. an
+// invalid App ID while the user is still typing) rather than throwing —
+// this is informational, not something that should block the actual form.
+export async function fetchReviewCount(appId: number, language: string): Promise<number | null> {
+  try {
+    const res = await fetch(`/api/games/${appId}/review-count?language=${encodeURIComponent(language)}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data.totalReviews === "number" ? data.totalReviews : null;
+  } catch {
+    return null;
+  }
+}
+
 async function postIngest(
   appId: number,
   body: Record<string, unknown>,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { parseSteamAppId } from "@/lib/steam";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
@@ -11,6 +11,7 @@ import {
   runIngestFetch,
   runFullIngestFetch,
   runParallelFullIngestFetch,
+  fetchReviewCount,
   toIngestRows,
   type IngestProgress,
   type FullIngestProgress,
@@ -49,6 +50,8 @@ export default function IngestPage() {
   const [parallelTotalOnSteam, setParallelTotalOnSteam] = useState(0);
   const [result, setResult] = useState<IngestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [availableCount, setAvailableCount] = useState<number | null>(null);
+  const [availableCountLoading, setAvailableCountLoading] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   useBackgroundTabWarning(loading && ingestAll);
@@ -57,6 +60,31 @@ export default function IngestPage() {
   const pendingCheckpoint = previewAppId !== null ? loadIngestCheckpoint(previewAppId) : null;
   const pendingParallelCheckpoint =
     previewAppId !== null ? loadParallelIngestCheckpoint(previewAppId) : null;
+
+  // "parallel" isn't a real Steam language value — it means "all languages,
+  // split into concurrent streams" — so the count check always asks for the
+  // same thing a parallel run would actually cover.
+  const countLanguage = language === "parallel" ? "all" : language;
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (previewAppId === null) {
+        if (!cancelled) setAvailableCount(null);
+        return;
+      }
+      if (!cancelled) setAvailableCountLoading(true);
+      const count = await fetchReviewCount(previewAppId, countLanguage);
+      if (!cancelled) {
+        setAvailableCount(count);
+        setAvailableCountLoading(false);
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [previewAppId, countLanguage]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -70,7 +98,10 @@ export default function IngestPage() {
     setLoading(true);
     setProgress(null);
     setCumulativeFetched(0);
-    setParallelTotalOnSteam(0);
+    // Seeded from the upfront count check so the progress bar has a real
+    // denominator immediately instead of sitting at 0% until the first
+    // batch's own total comes back.
+    setParallelTotalOnSteam(availableCount ?? 0);
     setError(null);
     setResult(null);
     try {
@@ -288,6 +319,17 @@ export default function IngestPage() {
             placeholder="store.steampowered.com/app/1091500 or 1091500"
             className="rounded border border-gray-300 px-3 py-2"
           />
+          {previewAppId !== null && (
+            <span className="text-xs text-gray-500">
+              {availableCountLoading
+                ? "Checking how many reviews Steam has…"
+                : availableCount !== null
+                  ? `${availableCount.toLocaleString()} review(s) on Steam${
+                      countLanguage !== "all" ? ` (${countLanguage})` : ""
+                    }`
+                  : "Couldn't check Steam's review count — the App ID may be invalid"}
+            </span>
+          )}
         </label>
 
         <label className="flex flex-col gap-1">
