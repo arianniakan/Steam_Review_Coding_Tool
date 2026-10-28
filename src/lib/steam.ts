@@ -54,11 +54,12 @@ export async function fetchReviewPage(
   appId: number,
   cursor: string,
   numPerPage = 100,
+  language = "all",
 ): Promise<SteamReviewsResponse> {
   const url = new URL(`https://store.steampowered.com/ajaxappreviews/${appId}`);
   url.searchParams.set("json", "1");
   url.searchParams.set("filter", "recent");
-  url.searchParams.set("language", "all");
+  url.searchParams.set("language", language);
   url.searchParams.set("cursor", cursor);
   url.searchParams.set("num_per_page", String(numPerPage));
   url.searchParams.set("purchase_type", "all");

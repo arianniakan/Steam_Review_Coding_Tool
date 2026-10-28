@@ -46,6 +46,9 @@ export async function POST(
   // already has them after the first call, so skip the redundant Steam
   // request on every subsequent one.
   const skipDetails = body.skipDetails === true;
+  // "english" cuts total volume a lot for popular games with huge review
+  // counts in every language — defaults to "all" to match prior behavior.
+  const language = typeof body.language === "string" && body.language ? body.language : "all";
 
   const details = skipDetails ? null : await fetchAppDetails(appId);
 
@@ -67,7 +70,7 @@ export async function POST(
 
       try {
         for (; pagesFetched < maxPages; pagesFetched++) {
-          const page = await fetchReviewPage(appId, cursor);
+          const page = await fetchReviewPage(appId, cursor, 100, language);
           totalReviewsOnSteam = page.query_summary?.total_reviews ?? totalReviewsOnSteam;
           if (!page.reviews || page.reviews.length === 0) break;
           allReviews.push(...page.reviews);

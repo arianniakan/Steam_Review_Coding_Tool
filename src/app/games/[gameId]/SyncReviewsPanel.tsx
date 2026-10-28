@@ -11,6 +11,12 @@ import {
   type IngestProgress,
   type FullIngestProgress,
 } from "@/lib/ingestClient";
+import {
+  loadIngestCheckpoint,
+  saveIngestCheckpoint,
+  clearIngestCheckpoint,
+} from "@/lib/ingestCheckpoint";
+import { useBackgroundTabWarning } from "@/lib/useBackgroundTabWarning";
 
 const DEFAULT_MAX_PAGES = 10;
 
@@ -21,11 +27,16 @@ const DEFAULT_MAX_PAGES = 10;
 // already knows.
 export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (game: Game) => void }) {
   const [maxPages, setMaxPages] = useState(DEFAULT_MAX_PAGES);
+  const [language, setLanguage] = useState("all");
   const [syncAll, setSyncAll] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<IngestProgress | FullIngestProgress | null>(null);
   const [cumulativeFetched, setCumulativeFetched] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
+
+  useBackgroundTabWarning(loading && syncAll);
+
+  const pendingCheckpoint = loadIngestCheckpoint(game.steamAppId);
 
   async function handleSync() {
     setLoading(true);
@@ -39,7 +50,30 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
         let insertedTotal = 0;
         let updatedTotal = 0;
         let fetchedTotal = 0;
-        await runFullIngestFetch(
+        let startCursor: string | undefined;
+        let effectiveLanguage = language;
+
+        const checkpoint = loadIngestCheckpoint(game.steamAppId);
+        if (checkpoint) {
+          const resume = window.confirm(
+            `Found an interrupted "sync all" for this game: ${checkpoint.fetchedTotal} review(s) already fetched` +
+              (checkpoint.totalReviewsOnSteam ? ` of ~${checkpoint.totalReviewsOnSteam} on Steam` : "") +
+              ` (language: ${checkpoint.language}), last updated ${new Date(checkpoint.updatedAt).toLocaleString()}.\n\n` +
+              `Resume from there? Cancel to start over from scratch.`,
+          );
+          if (resume) {
+            startCursor = checkpoint.cursor;
+            effectiveLanguage = checkpoint.language;
+            insertedTotal = checkpoint.insertedTotal;
+            updatedTotal = checkpoint.updatedTotal;
+            fetchedTotal = checkpoint.fetchedTotal;
+            setCumulativeFetched(fetchedTotal);
+          } else {
+            clearIngestCheckpoint(game.steamAppId);
+          }
+        }
+
+        const summary = await runFullIngestFetch(
           game.steamAppId,
           maxPages,
           setProgress,
@@ -53,14 +87,34 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
             setCumulativeFetched(fetchedTotal);
           },
           controller.signal,
+          {
+            language: effectiveLanguage,
+            startCursor,
+            onCheckpoint: (cursor, totalReviewsOnSteam) => {
+              saveIngestCheckpoint({
+                steamAppId: game.steamAppId,
+                language: effectiveLanguage,
+                cursor,
+                pagesPerBatch: maxPages,
+                fetchedTotal,
+                insertedTotal,
+                updatedTotal,
+                totalReviewsOnSteam,
+                updatedAt: new Date().toISOString(),
+              });
+            },
+          },
         );
-        const updatedGame = gameHolder.current;
-        if (!updatedGame) throw new Error("No reviews found for this game");
+        clearIngestCheckpoint(game.steamAppId);
+        // A resumed run that had nothing left to fetch never calls onBatch,
+        // so gameHolder is still empty even though the game itself may
+        // already exist locally from before the interruption.
+        const updatedGame = gameHolder.current ?? (await upsertGameFromSteam(summary.steamAppId, summary.gameDetails));
         await markGameSynced(updatedGame.id, fetchedTotal);
         onSynced({ ...updatedGame, lastIngestedAt: new Date().toISOString(), lastSyncReviewCount: fetchedTotal });
         toast.success(`Synced — ${insertedTotal} new, ${updatedTotal} refreshed`);
       } else {
-        const data = await runIngestFetch(game.steamAppId, maxPages, setProgress);
+        const data = await runIngestFetch(game.steamAppId, maxPages, setProgress, language);
         const updatedGame = await upsertGameFromSteam(data.steamAppId, data.gameDetails);
         const rows = toIngestRows(data.reviews);
         const { insertedCount, updatedCount } = await upsertReviewsBatch(updatedGame.id, rows);
@@ -107,14 +161,39 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
           className="rounded border border-gray-300 px-2 py-1"
         />
       </label>
+      <label className="mt-3 flex max-w-xs flex-col gap-1 text-sm">
+        <span className="font-medium">Language</span>
+        <select
+          value={language}
+          onChange={(e) => setLanguage(e.target.value)}
+          className="rounded border border-gray-300 px-2 py-1"
+        >
+          <option value="all">All languages</option>
+          <option value="english">English only</option>
+        </select>
+        <span className="text-xs text-gray-500">
+          English only is much faster for big, popular games.
+        </span>
+      </label>
       <label className="mt-2 flex items-center gap-2 text-xs text-gray-600">
         <input
           type="checkbox"
           checked={syncAll}
           onChange={(e) => setSyncAll(e.target.checked)}
         />
-        <span>Sync ALL reviews — keeps fetching until Steam has no more (cancel any time)</span>
+        <span>
+          Sync ALL reviews — keeps fetching until Steam has no more (cancel any time; keep this
+          tab in the foreground, backgrounded tabs get throttled hard by the browser)
+        </span>
       </label>
+      {pendingCheckpoint && (
+        <p className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+          Found an interrupted &quot;sync all&quot; for this game: {pendingCheckpoint.fetchedTotal} review(s)
+          already fetched{pendingCheckpoint.totalReviewsOnSteam ? ` of ~${pendingCheckpoint.totalReviewsOnSteam}` : ""}{" "}
+          (language: {pendingCheckpoint.language}). Checking &quot;Sync ALL&quot; and syncing will offer to
+          resume it.
+        </p>
+      )}
       <div className="mt-3 flex gap-2">
         <button
           type="button"

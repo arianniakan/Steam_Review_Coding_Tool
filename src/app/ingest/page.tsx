@@ -14,6 +14,12 @@ import {
   type IngestProgress,
   type FullIngestProgress,
 } from "@/lib/ingestClient";
+import {
+  loadIngestCheckpoint,
+  saveIngestCheckpoint,
+  clearIngestCheckpoint,
+} from "@/lib/ingestCheckpoint";
+import { useBackgroundTabWarning } from "@/lib/useBackgroundTabWarning";
 
 interface IngestResult {
   gameId: string;
@@ -29,6 +35,7 @@ interface IngestResult {
 export default function IngestPage() {
   const [appId, setAppId] = useState("");
   const [maxPages, setMaxPages] = useState(10);
+  const [language, setLanguage] = useState("all");
   const [ingestAll, setIngestAll] = useState(false);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<IngestProgress | FullIngestProgress | null>(null);
@@ -36,6 +43,11 @@ export default function IngestPage() {
   const [result, setResult] = useState<IngestResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+
+  useBackgroundTabWarning(loading && ingestAll);
+
+  const previewAppId = appId ? parseSteamAppId(appId) : null;
+  const pendingCheckpoint = previewAppId !== null ? loadIngestCheckpoint(previewAppId) : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -59,6 +71,29 @@ export default function IngestPage() {
         let insertedTotal = 0;
         let updatedTotal = 0;
         let fetchedTotal = 0;
+        let startCursor: string | undefined;
+        let effectiveLanguage = language;
+
+        const checkpoint = loadIngestCheckpoint(parsedId);
+        if (checkpoint) {
+          const resume = window.confirm(
+            `Found an interrupted "ingest all" for this game: ${checkpoint.fetchedTotal} review(s) already fetched` +
+              (checkpoint.totalReviewsOnSteam ? ` of ~${checkpoint.totalReviewsOnSteam} on Steam` : "") +
+              ` (language: ${checkpoint.language}), last updated ${new Date(checkpoint.updatedAt).toLocaleString()}.\n\n` +
+              `Resume from there? Cancel to start over from scratch.`,
+          );
+          if (resume) {
+            startCursor = checkpoint.cursor;
+            effectiveLanguage = checkpoint.language;
+            insertedTotal = checkpoint.insertedTotal;
+            updatedTotal = checkpoint.updatedTotal;
+            fetchedTotal = checkpoint.fetchedTotal;
+            setCumulativeFetched(fetchedTotal);
+          } else {
+            clearIngestCheckpoint(parsedId);
+          }
+        }
+
         const summary = await runFullIngestFetch(
           parsedId,
           maxPages,
@@ -73,9 +108,29 @@ export default function IngestPage() {
             setCumulativeFetched(fetchedTotal);
           },
           controller.signal,
+          {
+            language: effectiveLanguage,
+            startCursor,
+            onCheckpoint: (cursor, totalReviewsOnSteam) => {
+              saveIngestCheckpoint({
+                steamAppId: parsedId,
+                language: effectiveLanguage,
+                cursor,
+                pagesPerBatch: maxPages,
+                fetchedTotal,
+                insertedTotal,
+                updatedTotal,
+                totalReviewsOnSteam,
+                updatedAt: new Date().toISOString(),
+              });
+            },
+          },
         );
-        const game = gameHolder.current;
-        if (!game) throw new Error("No reviews found for this game");
+        clearIngestCheckpoint(parsedId);
+        // A resumed run that had nothing left to fetch never calls onBatch,
+        // so gameHolder is still empty even though the game itself may
+        // already exist locally from before the interruption.
+        const game = gameHolder.current ?? (await upsertGameFromSteam(summary.steamAppId, summary.gameDetails));
         setResult({
           gameId: game.id,
           gameName: game.name,
@@ -88,7 +143,7 @@ export default function IngestPage() {
         });
         toast.success(`Ingested ${insertedTotal} review(s) for ${game.name}`);
       } else {
-        const data = await runIngestFetch(parsedId, maxPages, setProgress);
+        const data = await runIngestFetch(parsedId, maxPages, setProgress, language);
 
         const game = await upsertGameFromSteam(data.steamAppId, data.gameDetails);
         const rows = toIngestRows(data.reviews);
@@ -162,6 +217,21 @@ export default function IngestPage() {
           />
         </label>
 
+        <label className="flex flex-col gap-1">
+          <span className="text-sm font-medium">Language</span>
+          <select
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+            className="rounded border border-gray-300 px-3 py-2"
+          >
+            <option value="all">All languages</option>
+            <option value="english">English only</option>
+          </select>
+          <span className="text-xs text-gray-500">
+            English only is much faster for big, popular games — fewer total reviews to page through.
+          </span>
+        </label>
+
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -170,9 +240,20 @@ export default function IngestPage() {
           />
           <span>
             Ingest ALL reviews — keeps fetching batch after batch until Steam has no more
-            (can take a while for popular games; cancel any time without losing progress already saved)
+            (can take a while for popular games; cancel any time without losing progress already saved,
+            and keep this tab in the foreground — backgrounded tabs get throttled hard by the browser)
           </span>
         </label>
+
+        {pendingCheckpoint && (
+          <p className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Found an interrupted &quot;ingest all&quot; for this game: {pendingCheckpoint.fetchedTotal} review(s)
+            already fetched{pendingCheckpoint.totalReviewsOnSteam ? ` of ~${pendingCheckpoint.totalReviewsOnSteam}` : ""}{" "}
+            (language: {pendingCheckpoint.language}), last updated{" "}
+            {new Date(pendingCheckpoint.updatedAt).toLocaleString()}. Checking &quot;Ingest ALL&quot; and
+            submitting will offer to resume it.
+          </p>
+        )}
 
         <div className="flex gap-2">
           <button
