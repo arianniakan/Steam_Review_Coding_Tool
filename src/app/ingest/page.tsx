@@ -144,7 +144,7 @@ export default function IngestPage() {
           fetchedFromSteam: fetchedTotal,
           ingestedCount: insertedTotal,
           updatedCount: updatedTotal,
-          pagesFetched: summary.totalBatches * maxPages,
+          pagesFetched: summary.totalPagesFetched,
           hasMore: false,
         });
         toast.success(`Ingested ${insertedTotal} review(s) for ${game.name} across ${STEAM_LANGUAGE_GROUPS.length} parallel language streams`);
@@ -222,7 +222,7 @@ export default function IngestPage() {
           fetchedFromSteam: fetchedTotal,
           ingestedCount: insertedTotal,
           updatedCount: updatedTotal,
-          pagesFetched: summary.batches * maxPages,
+          pagesFetched: summary.totalPagesFetched,
           hasMore: false,
         });
         toast.success(`Ingested ${insertedTotal} review(s) for ${game.name}`);

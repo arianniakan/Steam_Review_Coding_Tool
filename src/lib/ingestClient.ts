@@ -114,10 +114,17 @@ export async function runFullIngestFetch(
   onBatch: (reviews: SteamReview[], gameDetails: SteamAppDetails) => Promise<void>,
   signal?: AbortSignal,
   options?: RunFullIngestOptions,
-): Promise<{ steamAppId: number; gameDetails: SteamAppDetails; totalFetched: number; batches: number }> {
+): Promise<{
+  steamAppId: number;
+  gameDetails: SteamAppDetails;
+  totalFetched: number;
+  batches: number;
+  totalPagesFetched: number;
+}> {
   let cursor = options?.startCursor ?? "*";
   let batch = 0;
   let totalFetched = 0;
+  let totalPagesFetched = 0;
   let gameDetails: SteamAppDetails | null = null;
   let steamAppId = appId;
 
@@ -135,13 +142,14 @@ export async function runFullIngestFetch(
       steamAppId = data.steamAppId;
     }
     totalFetched += data.reviews.length;
+    totalPagesFetched += data.pagesFetched;
     if (data.reviews.length > 0) await onBatch(data.reviews, gameDetails!);
     cursor = data.cursor;
     options?.onCheckpoint?.(cursor, data.totalReviewsOnSteam);
     if (!data.hasMore) break;
   }
 
-  return { steamAppId, gameDetails: gameDetails!, totalFetched, batches: batch };
+  return { steamAppId, gameDetails: gameDetails!, totalFetched, batches: batch, totalPagesFetched };
 }
 
 export interface ParallelGroupState {
@@ -174,7 +182,7 @@ export async function runParallelFullIngestFetch(
   onTotalsChange: (fetchedTotal: number, insertedTotal: number, updatedTotal: number) => void,
   controller: AbortController,
   onCheckpoint?: (states: ParallelGroupState[]) => void,
-): Promise<{ steamAppId: number; gameDetails: SteamAppDetails; totalBatches: number }> {
+): Promise<{ steamAppId: number; gameDetails: SteamAppDetails; totalPagesFetched: number }> {
   const states: Record<string, ParallelGroupState> = {};
   for (const group of groups) {
     const key = group.join(",");
@@ -235,12 +243,12 @@ export async function runParallelFullIngestFetch(
     }),
   );
 
-  let totalBatches = 0;
+  let totalPagesFetched = 0;
   for (const result of settled) {
     if (result.status === "fulfilled") {
       steamAppId = result.value.steamAppId;
       anyGameDetails = result.value.gameDetails;
-      totalBatches += result.value.batches;
+      totalPagesFetched += result.value.totalPagesFetched;
     }
   }
 
@@ -253,7 +261,7 @@ export async function runParallelFullIngestFetch(
   if (failure) throw failure.reason;
 
   if (!anyGameDetails) throw new Error("No reviews found for this game");
-  return { steamAppId, gameDetails: anyGameDetails, totalBatches };
+  return { steamAppId, gameDetails: anyGameDetails, totalPagesFetched };
 }
 
 export function toIngestRows(reviews: SteamReview[]): IngestReviewRow[] {
