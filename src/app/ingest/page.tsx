@@ -38,6 +38,11 @@ interface IngestResult {
   updatedCount: number;
   pagesFetched: number;
   hasMore: boolean;
+  // Set when an "ingest all" run stopped because Steam gave us an empty or
+  // stalled page well short of the review count Steam itself reported —
+  // distinct from a clean finish, since it's ambiguous whether Steam
+  // actually ran out or just rate-limited us.
+  stoppedShort?: { fetched: number; totalOnSteam: number };
 }
 
 export default function IngestPage() {
@@ -261,7 +266,16 @@ export default function IngestPage() {
             },
           },
         );
-        clearIngestCheckpoint(parsedId);
+        // A run that stopped on an empty/stalled Steam page well short of
+        // Steam's own reported total is ambiguous — Steam may have actually
+        // run out, or it may just be rate-limiting us (both look identical
+        // from here). Keep the checkpoint in that case so "Ingest ALL" can
+        // resume instead of silently calling it done.
+        const stoppedShort =
+          summary.endedEarly && summary.totalReviewsOnSteam > 0 && fetchedTotal < summary.totalReviewsOnSteam * 0.95
+            ? { fetched: fetchedTotal, totalOnSteam: summary.totalReviewsOnSteam }
+            : undefined;
+        if (!stoppedShort) clearIngestCheckpoint(parsedId);
         // A resumed run that had nothing left to fetch never calls onBatch,
         // so gameHolder is still empty even though the game itself may
         // already exist locally from before the interruption.
@@ -275,8 +289,13 @@ export default function IngestPage() {
           updatedCount: updatedTotal,
           pagesFetched: summary.totalPagesFetched,
           hasMore: false,
+          stoppedShort,
         });
-        toast.success(`Ingested ${insertedTotal} review(s) for ${game.name}`);
+        if (stoppedShort) {
+          toast.warning(`Steam stopped responding after ${insertedTotal} new review(s) for ${game.name} — progress saved`);
+        } else {
+          toast.success(`Ingested ${insertedTotal} review(s) for ${game.name}`);
+        }
       } else {
         // "Parallel" only makes sense across a full multi-batch run — a
         // single bounded batch falls back to the plain "all" stream instead
@@ -487,6 +506,15 @@ export default function IngestPage() {
             <p className="mt-2 text-amber-600">
               Hit the page cap — re-run with a higher max pages (or run again
               later) to pull more.
+            </p>
+          )}
+          {result.stoppedShort && (
+            <p className="mt-2 text-amber-600">
+              Steam stopped sending more reviews after {result.stoppedShort.fetched} of ~
+              {result.stoppedShort.totalOnSteam} — this can happen when Steam&apos;s review
+              pagination hits its own limits on a very large review set, or if Steam is
+              temporarily rate-limiting requests. Your progress is saved — check &quot;Ingest
+              ALL reviews&quot; and submit again to try resuming from here.
             </p>
           )}
           <a

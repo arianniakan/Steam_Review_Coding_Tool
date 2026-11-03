@@ -227,14 +227,27 @@ export function SyncReviewsPanel({ game, onSynced }: { game: Game; onSynced: (ga
             },
           },
         );
-        clearIngestCheckpoint(game.steamAppId);
+        // A run that stopped on an empty/stalled Steam page well short of
+        // Steam's own reported total is ambiguous — Steam may have actually
+        // run out, or it may just be rate-limiting us (both look identical
+        // from here). Keep the checkpoint in that case so "Sync ALL" can
+        // resume instead of silently calling it done.
+        const stoppedShort =
+          summary.endedEarly && summary.totalReviewsOnSteam > 0 && fetchedTotal < summary.totalReviewsOnSteam * 0.95;
+        if (!stoppedShort) clearIngestCheckpoint(game.steamAppId);
         // A resumed run that had nothing left to fetch never calls onBatch,
         // so gameHolder is still empty even though the game itself may
         // already exist locally from before the interruption.
         const updatedGame = gameHolder.current ?? (await upsertGameFromSteam(summary.steamAppId, summary.gameDetails));
         await markGameSynced(updatedGame.id, fetchedTotal);
         onSynced({ ...updatedGame, lastIngestedAt: new Date().toISOString(), lastSyncReviewCount: fetchedTotal });
-        toast.success(`Synced — ${insertedTotal} new, ${updatedTotal} refreshed`);
+        if (stoppedShort) {
+          toast.warning(
+            `Steam stopped responding after ${insertedTotal} new, ${updatedTotal} refreshed (${fetchedTotal} of ~${summary.totalReviewsOnSteam} on Steam) — progress saved, sync again to resume`,
+          );
+        } else {
+          toast.success(`Synced — ${insertedTotal} new, ${updatedTotal} refreshed`);
+        }
       } else {
         // "Parallel" only makes sense across a full multi-batch run — a
         // single bounded batch falls back to the plain "all" stream instead

@@ -4,6 +4,14 @@ import { fetchAppDetails, fetchReviewPage, type SteamReview } from "@/lib/steam"
 const MAX_PAGES_CAP = 30;
 const DEFAULT_MAX_PAGES = 10;
 const PAGE_DELAY_MS = 100; // be polite to Steam's public endpoint, but don't dawdle
+// Steam's review cursor can return a transient empty page or fail to
+// advance — not just at the real end of a game's reviews, but also when
+// Steam is quietly rate-limiting us (seen firsthand: requests that normally
+// take under a second taking 7-10s after a day of heavy ingestion traffic).
+// A single empty/stalled page used to be treated as "done" outright, which
+// silently truncated big games' review sets way short of their real total.
+// Retry with backoff before accepting it as a genuine stop.
+const EMPTY_PAGE_RETRY_DELAYS_MS = [3000, 8000];
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -67,12 +75,25 @@ export async function POST(
       let cursor = startCursor;
       let pagesFetched = 0;
       let totalReviewsOnSteam = 0;
+      let endedEarly = false; // true once we give up on an empty/stalled page after retries
 
       try {
-        for (; pagesFetched < maxPages; pagesFetched++) {
-          const page = await fetchReviewPage(appId, cursor, 100, language);
+        outer: for (; pagesFetched < maxPages; pagesFetched++) {
+          let page = await fetchReviewPage(appId, cursor, 100, language);
           totalReviewsOnSteam = page.query_summary?.total_reviews ?? totalReviewsOnSteam;
-          if (!page.reviews || page.reviews.length === 0) break;
+
+          for (const delay of EMPTY_PAGE_RETRY_DELAYS_MS) {
+            const stalled = page.reviews && page.reviews.length > 0 && page.cursor === cursor;
+            if ((page.reviews && page.reviews.length > 0) && !stalled) break;
+            await sleep(delay);
+            page = await fetchReviewPage(appId, cursor, 100, language);
+            totalReviewsOnSteam = page.query_summary?.total_reviews ?? totalReviewsOnSteam;
+          }
+
+          if (!page.reviews || page.reviews.length === 0) {
+            endedEarly = true;
+            break outer;
+          }
           allReviews.push(...page.reviews);
           send({
             type: "progress",
@@ -81,7 +102,11 @@ export async function POST(
             reviewsSoFar: allReviews.length,
             totalReviewsOnSteam,
           });
-          if (page.cursor === cursor) break; // no forward progress — reached the end
+          if (page.cursor === cursor) {
+            // Retries above already gave this cursor several chances to move.
+            endedEarly = true;
+            break outer; // no forward progress — reached the end (or still stalled)
+          }
           cursor = page.cursor;
           if (pagesFetched < maxPages - 1) await sleep(PAGE_DELAY_MS);
         }
@@ -93,6 +118,7 @@ export async function POST(
           reviews: allReviews,
           pagesFetched,
           hasMore: pagesFetched === maxPages,
+          endedEarly,
           totalReviewsOnSteam,
           cursor,
         });

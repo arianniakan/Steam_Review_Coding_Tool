@@ -14,6 +14,13 @@ export interface IngestStreamResult {
   reviews: SteamReview[];
   pagesFetched: number;
   hasMore: boolean;
+  // True when this batch stopped because Steam gave us an empty page or a
+  // stalled cursor (after retries) rather than because we hit our own
+  // maxPages cap. This can mean Steam genuinely has no more reviews, but it
+  // can equally mean Steam is rate-limiting us — the two look identical
+  // from here, so callers shouldn't treat `endedEarly` alone as "done";
+  // compare the cumulative fetched count against totalReviewsOnSteam too.
+  endedEarly: boolean;
   totalReviewsOnSteam: number;
   cursor: string;
 }
@@ -142,6 +149,12 @@ export async function runFullIngestFetch(
   totalFetched: number;
   batches: number;
   totalPagesFetched: number;
+  totalReviewsOnSteam: number;
+  // Whether the run's final batch stopped on an empty/stalled page rather
+  // than hitting maxPages — see IngestStreamResult.endedEarly. The caller
+  // should compare totalFetched against totalReviewsOnSteam before
+  // treating this as a genuine, complete finish.
+  endedEarly: boolean;
 }> {
   let cursor = options?.startCursor ?? "*";
   let batch = 0;
@@ -149,6 +162,7 @@ export async function runFullIngestFetch(
   let totalPagesFetched = 0;
   let gameDetails: SteamAppDetails | null = null;
   let steamAppId = appId;
+  let endedEarly = false;
   // Steam only includes query_summary.total_reviews on the very first page
   // of a query (cursor="*") — every continuation-cursor page omits it
   // entirely, which would otherwise make the running total silently drop
@@ -179,10 +193,19 @@ export async function runFullIngestFetch(
     if (data.reviews.length > 0) await onBatch(data.reviews, gameDetails!);
     cursor = data.cursor;
     options?.onCheckpoint?.(cursor, effectiveTotal);
+    endedEarly = data.endedEarly;
     if (!data.hasMore) break;
   }
 
-  return { steamAppId, gameDetails: gameDetails!, totalFetched, batches: batch, totalPagesFetched };
+  return {
+    steamAppId,
+    gameDetails: gameDetails!,
+    totalFetched,
+    batches: batch,
+    totalPagesFetched,
+    totalReviewsOnSteam: lastKnownTotalReviewsOnSteam,
+    endedEarly,
+  };
 }
 
 export interface ParallelGroupState {
